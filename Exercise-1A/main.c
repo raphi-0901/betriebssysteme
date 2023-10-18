@@ -2,8 +2,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdbool.h>
 
-void processFile(const char *inputFilename, const char *outputFilename) {
+void processFile(const char *inputFilename, const char *outputFilename, const char *keyword, const bool caseSensitive) {
     FILE *inputFile = fopen(inputFilename, "r");
     if (inputFile == NULL) {
         fprintf(stderr, "Konnte die Eingabedatei %s nicht öffnen.\n", inputFilename);
@@ -21,14 +22,17 @@ void processFile(const char *inputFilename, const char *outputFilename) {
         }
     }
 
-    char line[256]; // Annahme: Zeilen sind nicht länger als 255 Zeichen
+    char line[1024];
+    int i = 0;
     while (fgets(line, sizeof(line), inputFile)) {
-        // Hier kannst du die Zeilen verarbeiten und in die Ausgabedatei schreiben
-        fprintf(outputFile, "%s", line);
+        char *result = strstr(line, keyword);
+
+        if (result != NULL) {
+            fprintf(outputFile, "%s:%d: %s\n", inputFilename, i, line);
+        }
     }
 
     fclose(inputFile);
-
     if (outputFile != stdout) {
         fclose(outputFile);
     }
@@ -37,21 +41,30 @@ void processFile(const char *inputFilename, const char *outputFilename) {
 int main(int argc, char *argv[]) {
     char *outputFilename = NULL;
     int opt;
-    
-    while ((opt = getopt(argc, argv, "i:o:")) != -1) {
+
+    bool caseSensitive = false;
+    while ((opt = getopt(argc, argv, "io:")) != -1) {
         switch (opt) {
             case 'i':
-                // Verarbeite die Eingabedatei und verwende outputFilename
-                processFile(optarg, outputFilename);
+                caseSensitive = true;
                 break;
             case 'o':
                 outputFilename = optarg;
                 break;
             default:
-                fprintf(stderr, "Verwendung: %s -i Datei -o Ausgabedatei\n", argv[0]);
-                return 1;
+                break;
         }
     }
 
-    return 0;
+    if(optind >= argc) {
+        return EXIT_FAILURE;
+    }
+
+    char *keyword = argv[optind];
+    optind++;
+    for (; optind < argc; optind++){
+        processFile(argv[optind], outputFilename, keyword, caseSensitive);
+    }
+
+    return EXIT_SUCCESS;
 }
