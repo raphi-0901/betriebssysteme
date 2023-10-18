@@ -5,6 +5,8 @@
 #include <stdbool.h>
 #include <ctype.h>
 
+//TODO: makefile!! longline, error messages, testcase 10, usage messages
+
 void toLowerCase(char *str) {
     for (int i = 0; str[i] != '\0'; i++) {
         str[i] = tolower((unsigned char) str[i]);
