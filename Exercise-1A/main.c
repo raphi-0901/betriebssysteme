@@ -3,14 +3,15 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdbool.h>
+#include <ctype.h>
 
-void processFile(const char *inputFilename, const char *outputFilename, const char *keyword, const bool caseSensitive) {
-    FILE *inputFile = fopen(inputFilename, "r");
-    if (inputFile == NULL) {
-        fprintf(stderr, "Konnte die Eingabedatei %s nicht öffnen.\n", inputFilename);
-        return;
+void toLowerCase(char *str) {
+    for (int i = 0; str[i] != '\0'; i++) {
+        str[i] = tolower((unsigned char) str[i]);
     }
+}
 
+void processFile(FILE *inputFile, const char *outputFilename, char *keyword, const bool caseSensitive) {
     FILE *outputFile = stdout; // Standardausgabe
 
     if (outputFilename) {
@@ -22,13 +23,24 @@ void processFile(const char *inputFilename, const char *outputFilename, const ch
         }
     }
 
-    char line[1024];
-    int i = 0;
-    while (fgets(line, sizeof(line), inputFile)) {
-        char *result = strstr(line, keyword);
+    if (caseSensitive == false) {
+        toLowerCase(keyword);
+    }
 
+    char line[1024];
+    while (fgets(line, sizeof(line), inputFile)) {
+        char *result = NULL;
+
+        char updatedLine[strlen(line) + 1];
+        strcpy(updatedLine, line);
+
+        if (caseSensitive == false) {
+            toLowerCase(updatedLine);
+        }
+
+        result = strstr(updatedLine, keyword);
         if (result != NULL) {
-            fprintf(outputFile, "%s:%d: %s\n", inputFilename, i, line);
+            fprintf(outputFile, "%s", line);
         }
     }
 
@@ -42,11 +54,11 @@ int main(int argc, char *argv[]) {
     char *outputFilename = NULL;
     int opt;
 
-    bool caseSensitive = false;
+    bool caseSensitive = true;
     while ((opt = getopt(argc, argv, "io:")) != -1) {
         switch (opt) {
             case 'i':
-                caseSensitive = true;
+                caseSensitive = false;
                 break;
             case 'o':
                 outputFilename = optarg;
@@ -56,14 +68,24 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if(optind >= argc) {
+    if (optind >= argc) {
         return EXIT_FAILURE;
     }
 
     char *keyword = argv[optind];
     optind++;
-    for (; optind < argc; optind++){
-        processFile(argv[optind], outputFilename, keyword, caseSensitive);
+
+    if (optind >= argc) {
+        processFile(stdin, outputFilename, keyword, caseSensitive);
+    } else {
+        for (; optind < argc; optind++) {
+            FILE *inputFile = fopen(argv[optind], "r");
+            if (inputFile == NULL) {
+                fprintf(stderr, "Konnte die Eingabedatei %s nicht öffnen.\n", argv[optind]);
+                continue;
+            }
+            processFile(inputFile, outputFilename, keyword, caseSensitive);
+        }
     }
 
     return EXIT_SUCCESS;
