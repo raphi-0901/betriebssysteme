@@ -29,23 +29,21 @@ void processFile(FILE *inputFile, const char *outputFilename, char *keyword, con
         toLowerCase(keyword);
     }
 
-    char line[1024];
-    while (fgets(line, sizeof(line), inputFile)) {
+    size_t len = 0;
+    char *line = NULL;
+    while (getline(&line, &len, inputFile) != 1) {
         char *result = NULL;
-
-        char updatedLine[strlen(line) + 1];
-        strcpy(updatedLine, line);
-
         if (caseSensitive == false) {
-            toLowerCase(updatedLine);
+            toLowerCase(line);
         }
 
-        result = strstr(updatedLine, keyword);
+        result = strstr(line, keyword);
         if (result != NULL) {
             fprintf(outputFile, "%s", line);
         }
     }
 
+    free(line);
     fclose(inputFile);
     if (outputFile != stdout) {
         fclose(outputFile);
