@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -6,13 +8,6 @@
 #include <ctype.h>
 
 //TODO: makefile!! longline, error messages, testcase 10, usage messages
-
-void toLowerCase(char *str) {
-    for (int i = 0; str[i] != '\0'; i++) {
-        str[i] = tolower((unsigned char) str[i]);
-    }
-}
-
 void processFile(FILE *inputFile, const char *outputFilename, char *keyword, const bool caseSensitive) {
     FILE *outputFile = stdout; // Standardausgabe
 
@@ -24,20 +19,16 @@ void processFile(FILE *inputFile, const char *outputFilename, char *keyword, con
             return;
         }
     }
-
-    if (caseSensitive == false) {
-        toLowerCase(keyword);
-    }
-
     size_t len = 0;
     char *line = NULL;
     while (getline(&line, &len, inputFile) != 1) {
         char *result = NULL;
         if (caseSensitive == false) {
-            toLowerCase(line);
+            result = strcasestr(line, keyword);
+        } else {
+            result = strstr(line, keyword);
         }
 
-        result = strstr(line, keyword);
         if (result != NULL) {
             fprintf(outputFile, "%s", line);
         }
@@ -53,6 +44,11 @@ void processFile(FILE *inputFile, const char *outputFilename, char *keyword, con
 int main(int argc, char *argv[]) {
     char *outputFilename = NULL;
     int opt;
+
+    if(argc < 2) {
+        printf("Description: This program requires an argument.\n");
+        return 1;
+    }
 
     bool caseSensitive = true;
     while ((opt = getopt(argc, argv, "io:")) != -1) {
