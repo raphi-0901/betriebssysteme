@@ -7,7 +7,7 @@
 #include <string.h>
 
 #define EXIT_FAILURE 1
-#define EXIT_SUCCESS 0
+//#define EXIT_SUCCESS 0
 #define PI 3.141592654
 
 //void fft(double A[], int n);
@@ -97,9 +97,9 @@ void fft(double A[], int n, int precision, int pipe_even[2], int pipe_odd[2]) {
 
     // Combine results using the butterfly operation
     for (int k = 0; k < n_half; k++) {
-        float complex t = cexp(-I * 2.0 * PI * k / n) * odd[k];
-        A[k] = even[k] + t;
-        A[k + n_half] = even[k] - t;
+        ////float complex t = cexp(-I * 2.0 * PI * k / n) * odd[k];
+        //A[k] = even[k] + t;
+        //A[k + n_half] = even[k] - t;
     }
 }
 
@@ -110,12 +110,24 @@ int main(int argc, char* argv[]) {
         precision = 3;
     }
 
-    // Read input values from stdin
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t nread;
     double A[100];  // Adjust the size as needed
-    int n = 0;
-    while (scanf("%lf\n", &A[n]) != EOF) {
-        n++;
-    }
+	int n = 0;
+
+	while((nread = getline(&line, &len, stdin)) != -1) {
+		fwrite(line, nread, 1, stdout);
+		A[n] = atof(line);
+		n++;
+	}
+
+	printf("line: %s", line);
+	free(line);
+
+	for(int i = 0; i < n; i++) {
+		printf("number %d: %f\n", i, A[i]);
+	}
 
     // Check for valid input
     if (n <= 0 || n % 2 != 0) {
