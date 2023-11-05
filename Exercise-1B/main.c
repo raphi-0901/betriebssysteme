@@ -9,16 +9,17 @@
 #define PI 3.141592654
 
 // Function to perform FFT
-void fft(double A[], int n, int precision, int pipe_even[2], int pipe_odd[2]) {
-	printf("fft with %d numbers\n", n);
+void fft(float complex A[], int n, int precision, int pipe_even[2], int pipe_odd[2]) {
 	if (n <= 1) {
 		// Base case, nothing to do
+		printf("exit with base case\n");
 		exit(EXIT_SUCCESS);
 	}
+	printf("fft with %d numbers\n", n);
 	// Split the array into even and odd parts
 	int n_half = n / 2;
-	double even[n_half];
-	double odd[n_half];
+	float complex even[n_half];
+	float complex odd[n_half];
 	for (int i = 0; i < n_half; i++) {
 		even[i] = A[2 * i];
 		odd[i] = A[2 * i + 1];
@@ -37,9 +38,8 @@ void fft(double A[], int n, int precision, int pipe_even[2], int pipe_odd[2]) {
 		close(pipe_even[0]);
 		close(pipe_odd[0]);
 		close(pipe_odd[1]);
-		printf("in even process with %d numbers\n", n);
 		// Perform FFT on the even part
-		fft(even, n_half, precision, NULL, NULL);
+		fft(even, n_half, precision, pipe_even, pipe_odd);
 
 		// Send the result back to the parent through pipe
 		write(pipe_even[1], even, n_half * sizeof(float complex));
@@ -60,10 +60,9 @@ void fft(double A[], int n, int precision, int pipe_even[2], int pipe_odd[2]) {
 		close(pipe_even[0]);
 		close(pipe_even[1]);
 		close(pipe_odd[0]);
-		printf("in odd process with %d numbers\n", n);
 
 		// Perform FFT on the odd part
-		fft(odd, n_half, precision, NULL, NULL);
+		fft(odd, n_half, precision, pipe_even, pipe_odd);
 
 		// Send the result back to the parent through pipe
 		write(pipe_odd[1], odd, n_half * sizeof(float complex));
@@ -78,8 +77,10 @@ void fft(double A[], int n, int precision, int pipe_even[2], int pipe_odd[2]) {
 
 	// Wait for child processes to complete
 	int status_even, status_odd;
+	printf("wait for childs\n");
 	waitpid(child_even, &status_even, 0);
 	waitpid(child_odd, &status_odd, 0);
+	printf("waited for childs - Even-Status: %d - Odd-Status: %d\n", status_even, status_odd);
 
 	if (status_even != EXIT_SUCCESS || status_odd != EXIT_SUCCESS) {
 		fprintf(stderr, "Child process failed.\n");
@@ -94,9 +95,9 @@ void fft(double A[], int n, int precision, int pipe_even[2], int pipe_odd[2]) {
 
 	// Combine results using the butterfly operation
 	for (int k = 0; k < n_half; k++) {
-		////float complex t = cexp(-I * 2.0 * PI * k / n) * odd[k];
-		//A[k] = even[k] + t;
-		//A[k + n_half] = even[k] - t;
+		float complex t = cexp(-I * 2.0 * PI * k / n) * odd[k];
+		A[k] = even[k] + t;
+		A[k + n_half] = even[k] - t;
 	}
 }
 
@@ -110,9 +111,9 @@ int main(int argc, char* argv[]) {
 	char *line = NULL;
 	size_t len = 0;
 	ssize_t nread;
-	double A[100];  // Adjust the size as needed
+	float complex A[100];  // Adjust the size as needed
 	int initialCapacity = 2;
-	double *numbers = (double *)malloc(initialCapacity * sizeof(double));
+	float complex *numbers = (float complex *)calloc(initialCapacity, sizeof(float complex));
 
 	if(numbers == NULL) {
 		printf("Something went wrong allocating memory");
@@ -127,27 +128,17 @@ int main(int argc, char* argv[]) {
 
 		if(n >= initialCapacity) {
 			initialCapacity *= 2;
-			double *tmpNumbers = (double *)realloc(numbers, initialCapacity * sizeof(double));
+			numbers = realloc(numbers, initialCapacity * sizeof(float complex));
 
-			if(tmpNumbers == NULL) {
+			if(numbers == NULL) {
 				printf("Something went wrong allocating memory");
 				fprintf(stderr, "Pipe creation failed.\n");
 				free(numbers);
 				exit(EXIT_FAILURE);
 			}
-
-			for(int i = 0; i < initialCapacity/2; i++) {
-				tmpNumbers[i] = numbers[i];
-			}
-
-			numbers = tmpNumbers;
 		}
 	}
 	free(line);
-
-	for(int i = 0; i < n; i++) {
-		//printf("number %d: %f\n", i, A[i]);
-	}
 
 	// Check for valid input
 	if (n <= 0 || n % 2 != 0 || (n & (n - 1)) != 0) {
@@ -168,6 +159,10 @@ int main(int argc, char* argv[]) {
 
 	// Perform FFT
 	fft(A, n, precision, pipe_even, pipe_odd);
+	
+	for(int i = 0; i < n; i++) {
+		printf("%f + %fi\n", creal(A[i]), cimag(A[i]));
+	}
 
 	// Close pipes
 	close(pipe_even[0]);
