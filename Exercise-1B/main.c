@@ -12,10 +12,9 @@
 void fft(float complex A[], int n, int precision, int pipe_even[2], int pipe_odd[2]) {
 	if (n <= 1) {
 		// Base case, nothing to do
-		printf("exit with base case\n");
 		exit(EXIT_SUCCESS);
 	}
-	printf("fft with %d numbers\n", n);
+
 	// Split the array into even and odd parts
 	int n_half = n / 2;
 	float complex even[n_half];
@@ -38,6 +37,7 @@ void fft(float complex A[], int n, int precision, int pipe_even[2], int pipe_odd
 		close(pipe_even[0]);
 		close(pipe_odd[0]);
 		close(pipe_odd[1]);
+
 		// Perform FFT on the even part
 		fft(even, n_half, precision, pipe_even, pipe_odd);
 
@@ -77,11 +77,8 @@ void fft(float complex A[], int n, int precision, int pipe_even[2], int pipe_odd
 
 	// Wait for child processes to complete
 	int status_even, status_odd;
-	printf("wait for childs\n");
 	waitpid(child_even, &status_even, 0);
 	waitpid(child_odd, &status_odd, 0);
-	printf("waited for childs - Even-Status: %d - Odd-Status: %d\n", status_even, status_odd);
-
 	if (status_even != EXIT_SUCCESS || status_odd != EXIT_SUCCESS) {
 		fprintf(stderr, "Child process failed.\n");
 		exit(EXIT_FAILURE);
@@ -122,8 +119,7 @@ int main(int argc, char* argv[]) {
 
 	int n = 0;
 	while((nread = getline(&line, &len, stdin)) != -1) {
-		//fwrite(line, nread, 1, stdout);
-		A[n] = atof(line);
+		A[n] = strtof(line, NULL);
 		n++;
 
 		if(n >= initialCapacity) {
@@ -131,14 +127,19 @@ int main(int argc, char* argv[]) {
 			numbers = realloc(numbers, initialCapacity * sizeof(float complex));
 
 			if(numbers == NULL) {
-				printf("Something went wrong allocating memory");
-				fprintf(stderr, "Pipe creation failed.\n");
+				fprintf(stderr, "Something went wrong allocating memory\n");
 				free(numbers);
 				exit(EXIT_FAILURE);
 			}
 		}
 	}
 	free(line);
+
+	// Just print the number
+	if(n == 1) {
+		printf("%.*f %.*f*i\n", precision, creal(A[0]), precision, cimag(A[0]));
+		exit(EXIT_SUCCESS);
+	}
 
 	// Check for valid input
 	if (n <= 0 || n % 2 != 0 || (n & (n - 1)) != 0) {
@@ -161,7 +162,7 @@ int main(int argc, char* argv[]) {
 	fft(A, n, precision, pipe_even, pipe_odd);
 	
 	for(int i = 0; i < n; i++) {
-		printf("%f + %fi\n", creal(A[i]), cimag(A[i]));
+		printf("%.*f %.*f*i\n", precision, creal(A[i]), precision, cimag(A[i]));
 	}
 
 	// Close pipes
@@ -173,5 +174,4 @@ int main(int argc, char* argv[]) {
 
 	exit(EXIT_SUCCESS);
 }
-
 
