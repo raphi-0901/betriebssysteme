@@ -10,54 +10,6 @@
 #include <errno.h>
 
 #define PI 3.141592654
-static double convertNumber(char* str);
-
-static double convertNumber(char* str) {
-    if (str == NULL || *str == '\0') {
-		exit(EXIT_FAILURE);
-    }
-
-	errno = 0;
-	char *endPointer;
-
-
-	// Regex-Muster für die gewünschten Zeichenfolgen
-	const char *pattern = "^[ \t]*[-+]?[0-9]+(\\.[0-9]+)?[ \t]*$"; // Regex-Muster für positive und negative Zahlen
-    regex_t regex;
-    int ret;
-
-    ret = regcomp(&regex, pattern, REG_EXTENDED);
-    if (ret) {
-        fprintf(stderr, "Fehler beim Kompilieren des regulären Ausdrucks\n");
-        return 1;
-    }
-
-	printf("%s",str);
-
-
-	if (regexec(&regex, str, 0, NULL, 0) == REG_NOMATCH) {
-		printf("No match: %s\n", str);
-	} else {
-		printf("Match: %s\n", str);
-	}
-
-    regfree(&regex);
-
-    double number = strtof(str, &endPointer); // Attempt to convert the string to a long integer
-
-
-
-	if(errno != 0) {
-		fprintf(stderr, "Error occured");
-		exit(EXIT_FAILURE);
-	}
-
-	printf("s number: %f\n", number);
-
-	printf("converted number: %f\n", number);
-
-    return number; // Successfully parsed as a number
-}
 
 /**
  * @brief Converts an input line to a double complex number.
@@ -66,32 +18,58 @@ static double convertNumber(char* str) {
  * @return EXIT_FAILURE if input is not a (complex number)
  */
 static double complex convertInputToNumber(char *input) {
-    // const char *patterns[] = {"-?\\d+\\.\\d+\\s\\d+\\*i", "\\d+\\s\\d+\\*i", "\\d+"};
-    char *token;
-    double complex number = 22;
-
-    // split string into parts.. first part should match any number
-    token = strtok(input, " ");
-	if(token == NULL) {
-		// error - no input
-	}
-
-	number = convertNumber(token);
-
-	// get second part of string (if it exists + check for any number and a ending i)
-    token = strtok(NULL, " ");
-	if(token != NULL) {
-
-		//check with regex
-	}
-
+    // Variablen für die Real- und Imaginärteile
+    double real = 0.0, imag = 0.0;
+    
+    // Verarbeiten Sie den Eingabestring
+    char *endptrReal;
+    
+    // Suchen Sie nach dem Realteil
+    real = strtod(input, &endptrReal);
 	
-	printf("%s", token);
-	printf("%s", token);
+	if (endptrReal == input || real == 0.0) {
+        printf("1- Konvertierung fehlgeschlagen.\n");
+		exit(EXIT_FAILURE);
+    }
+    
+    // Überspringen Sie Leerzeichen und eventuelles Minuszeichen
+    while (*endptrReal == ' ') {
+        endptrReal++;
+    }
 
-	// start converting number
-    // double complex number = strtof(input, &input);
-	return number;
+	// there is no further string after empty spaces after number
+	if (*endptrReal == '\0' || *endptrReal == '\n') {
+		double complex number = imag;
+		return number;
+    }
+    
+
+	char *endptrImag;
+	// check if there is another number
+    imag = strtod(endptrReal, &endptrImag);
+	if (endptrReal == endptrImag || imag == 0.0) {
+        printf("Konvertierung fehlgeschlagen.\n");
+		exit(EXIT_FAILURE);
+    }
+	
+    // check if there is a *i at the end
+    if (*endptrImag != '*' || *(endptrImag+1) != 'i') {
+		printf("Konvertierung fehlgeschlagen.\n");
+		exit(EXIT_FAILURE);    
+	}
+
+	endptrImag += 2;
+
+    // there are further chars after *i
+	if (*endptrImag != '\0' && *endptrImag != '\n') {
+		printf("Konvertierung fehlgeschlagen.\n");
+		exit(EXIT_FAILURE);  
+	}
+    
+    // Erzeugen Sie die komplexe Zahl
+    double complex z = real + imag * I;
+	// printf("%f %f*I\n", creal(z), cimag(z));
+	return z;
 }
 
 // Function to perform FFT
