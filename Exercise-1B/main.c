@@ -5,8 +5,94 @@
 #include <math.h>
 #include <complex.h>
 #include <string.h>
+#include <regex.h>
+#include <ctype.h>
+#include <errno.h>
 
 #define PI 3.141592654
+static double convertNumber(char* str);
+
+static double convertNumber(char* str) {
+    if (str == NULL || *str == '\0') {
+		exit(EXIT_FAILURE);
+    }
+
+	errno = 0;
+	char *endPointer;
+
+
+	// Regex-Muster für die gewünschten Zeichenfolgen
+	const char *pattern = "^[ \t]*[-+]?[0-9]+(\\.[0-9]+)?[ \t]*$"; // Regex-Muster für positive und negative Zahlen
+    regex_t regex;
+    int ret;
+
+    ret = regcomp(&regex, pattern, REG_EXTENDED);
+    if (ret) {
+        fprintf(stderr, "Fehler beim Kompilieren des regulären Ausdrucks\n");
+        return 1;
+    }
+
+	printf("%s",str);
+
+
+	if (regexec(&regex, str, 0, NULL, 0) == REG_NOMATCH) {
+		printf("No match: %s\n", str);
+	} else {
+		printf("Match: %s\n", str);
+	}
+
+    regfree(&regex);
+
+    double number = strtof(str, &endPointer); // Attempt to convert the string to a long integer
+
+
+
+	if(errno != 0) {
+		fprintf(stderr, "Error occured");
+		exit(EXIT_FAILURE);
+	}
+
+	printf("s number: %f\n", number);
+
+	printf("converted number: %f\n", number);
+
+    return number; // Successfully parsed as a number
+}
+
+/**
+ * @brief Converts an input line to a double complex number.
+ * @details Prints the output to the stdout if no outputFilename is specified
+ * @param input Input to check
+ * @return EXIT_FAILURE if input is not a (complex number)
+ */
+static double complex convertInputToNumber(char *input) {
+    // const char *patterns[] = {"-?\\d+\\.\\d+\\s\\d+\\*i", "\\d+\\s\\d+\\*i", "\\d+"};
+    char *token;
+    double complex number = 22;
+
+    // split string into parts.. first part should match any number
+    token = strtok(input, " ");
+	if(token == NULL) {
+		// error - no input
+	}
+
+	number = convertNumber(token);
+
+	// get second part of string (if it exists + check for any number and a ending i)
+    token = strtok(NULL, " ");
+	if(token != NULL) {
+
+		//check with regex
+	}
+
+	
+	printf("%s", token);
+	printf("%s", token);
+
+	// start converting number
+    // double complex number = strtof(input, &input);
+	return number;
+}
 
 // Function to perform FFT
 void fft(float complex A[], int n, int precision, int pipe_even[2], int pipe_odd[2]) {
@@ -92,7 +178,7 @@ void fft(float complex A[], int n, int precision, int pipe_even[2], int pipe_odd
 
 	// Combine results using the butterfly operation
 	for (int k = 0; k < n_half; k++) {
-		float complex t = cexp(-I * 2.0 * PI * k / n) * odd[k];
+		float complex t = (cos((((-2 * PI) / n)) * k) + I * sin(((-2 * PI) / n) * k)) * odd[k];
 		A[k] = even[k] + t;
 		A[k + n_half] = even[k] - t;
 	}
@@ -119,7 +205,7 @@ int main(int argc, char* argv[]) {
 
 	int n = 0;
 	while((nread = getline(&line, &len, stdin)) != -1) {
-		A[n] = strtof(line, NULL);
+		A[n] = 	convertInputToNumber(line);
 		n++;
 
 		if(n >= initialCapacity) {
@@ -159,7 +245,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	// Perform FFT
-	fft(A, n, precision, pipe_even, pipe_odd);
+	//fft(A, n, precision, pipe_even, pipe_odd);
 	
 	for(int i = 0; i < n; i++) {
 		printf("%.*f %.*f*i\n", precision, creal(A[i]), precision, cimag(A[i]));
