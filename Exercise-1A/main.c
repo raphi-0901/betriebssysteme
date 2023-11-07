@@ -1,3 +1,12 @@
+/**
+ * @file main.c
+ * @author Raphael Wirnsberger <e12220836@student.tuwien.ac.at>
+ * @date 10.11.2023
+ *
+ * @brief Source file of mygrep programm.
+ *
+ **/
+
 #define _GNU_SOURCE
 
 #include <stdio.h>
@@ -7,13 +16,24 @@
 #include <stdbool.h>
 #include <ctype.h>
 
-//TODO: makefile!! longline, error messages, testcase 10, usage messages
+char* name;
+
+/**
+ * Process a file.
+ * @brief Process one input file´s input and prints all the found lines.
+ * @details Prints the output to the stdout if no outputFilename is specified
+ * @param inputFile File stream to input file
+ * @param outputFilename relative path of outputfile, if null stdout is used
+ * @param keyword Keyword to search for
+ * @param caseSensitive CaseSensitive parameter
+ * @return EXIT_FAILURE if there is a problem with the output corresponding with the specified outputFilename
+ */
 void processFile(FILE *inputFile, const char *outputFilename, char *keyword, const bool caseSensitive) {
-	FILE *outputFile = stdout; // Standardausgabe
+	FILE *outputFile = stdout;
 	if (outputFilename) {
 		outputFile = fopen(outputFilename, "w");
 		if (outputFile == NULL) {
-			fprintf(stderr, "Konnte die Ausgabedatei %s nicht öffnen.\n", outputFilename);
+			fprintf(stderr, "Cannot open file: %s.\n", outputFilename);
 			fclose(inputFile);
 			exit(EXIT_FAILURE);
 		}
@@ -40,13 +60,31 @@ void processFile(FILE *inputFile, const char *outputFilename, char *keyword, con
 	}
 }
 
+/**
+ * Program usage info.
+ * @brief Prints a usage info for the program and exits with EXIT_FAILURE
+ * @return exits the programm with EXIT_FAILURE
+ */
+void usage(void) {
+	fprintf(stderr, "Usage:\t%s [-i] [-o outputfile] [inputfile...]\n", name);
+	exit(EXIT_FAILURE);
+}
+
+/**
+ * Program entry point.
+ * @brief Reads all arguments and processes all specified files one by one.
+ * @details If there is no input files specified, the programm uses stdin as inputFile.
+ * @param argc The argument counter.
+ * @param argv The argument vector.
+ * @return EXIT_SUCCESS or EXIT_FAILURE.
+ */
 int main(int argc, char *argv[]) {
+	name = argv[0];
 	char *outputFilename = NULL;
 	int opt;
 
 	if(argc < 2) {
-		printf("Description: This program requires an argument.\n");
-		exit(EXIT_FAILURE);
+		usage();
 	}
 
 	bool caseSensitive = true;
@@ -59,12 +97,13 @@ int main(int argc, char *argv[]) {
 				outputFilename = optarg;
 				break;
 			default:
+				usage();
 				break;
 		}
 	}
 
 	if (optind >= argc) {
-		exit(EXIT_FAILURE);
+		usage();
 	}
 
 	char *keyword = argv[optind];
@@ -75,7 +114,7 @@ int main(int argc, char *argv[]) {
 		for (; optind < argc; optind++) {
 			FILE *inputFile = fopen(argv[optind], "r");
 			if (inputFile == NULL) {
-				fprintf(stderr, "Konnte die Eingabedatei %s nicht öffnen.\n", argv[optind]);
+				fprintf(stderr, "Cannot open input file: %s.\n", argv[optind]);
 				exit(EXIT_FAILURE);
 			}
 			processFile(inputFile, outputFilename, keyword, caseSensitive);
