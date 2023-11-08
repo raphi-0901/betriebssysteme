@@ -11,6 +11,98 @@
 
 #define PI 3.141592654
 
+int initialNumbersCapacity = 1;
+
+static double complex convertInputToNumber(char *input);
+static void fft(float complex A[], int n, int precision, int pipe_even[2], int pipe_odd[2]);
+static int readInput(double complex** numbers);
+
+int main(int argc, char* argv[]) {
+	// Parse command-line options if needed
+	int precision = 6;  // Default precision
+	if (argc > 1 && strcmp(argv[1], "-p") == 0) {
+		precision = 3;
+	}
+	double complex* numbers = (double complex*)calloc(initialNumbersCapacity, sizeof(double complex));
+	if(numbers == NULL) {
+		printf("Something went wrong allocating memory");
+		exit(EXIT_FAILURE);
+	}
+
+	int numbersCount = readInput(&numbers);
+
+	printf("numbers in: %d", numbersCount);
+	// Just print the number
+	if(numbersCount == 1) {
+		printf("%.*f %.*f*i\n", precision, creal(numbers[0]), precision, cimag(numbers[0]));
+		exit(EXIT_SUCCESS);
+	}
+
+	// Check for valid input
+	if (numbersCount <= 0 || numbersCount % 2 != 0 || (numbersCount & (numbersCount - 1)) != 0) {
+		fprintf(stderr, "Invalid input %d.\n", numbersCount);
+		free(numbers);
+		exit(EXIT_FAILURE);
+	}
+
+	free(numbers);
+
+	// // Create pipes for communication with child processes
+	// int pipe_even[2];
+	// int pipe_odd[2];
+
+	// if (pipe(pipe_even) == -1 || pipe(pipe_odd) == -1) {
+	// 	fprintf(stderr, "Pipe creation failed.\n");
+	// 	free(numbers);
+	// 	exit(EXIT_FAILURE);
+	// }
+
+	// // Perform FFT
+	// //fft(A, n, precision, pipe_even, pipe_odd);
+	
+	// for(int i = 0; i < n; i++) {
+	// 	printf("%.*f %.*f*i\n", precision, creal(A[i]), precision, cimag(A[i]));
+	// }
+
+	// // Close pipes
+	// close(pipe_even[0]);
+	// close(pipe_even[1]);
+	// close(pipe_odd[0]);
+	// close(pipe_odd[1]);
+	// free(numbers);
+
+	// exit(EXIT_SUCCESS);
+}
+
+static int readInput(double complex** numbers) {
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t nread;
+
+	int counter = 0;
+	while((nread = getline(&line, &len, stdin)) != -1) {
+		//double complex n = convertInputToNumber(line);
+		(*numbers)[counter] = convertInputToNumber(line);
+		counter++;
+        printf("in readInput: %f %f*i\n", creal((*numbers)[counter - 1]), cimag((*numbers)[counter - 1]));
+
+
+		if(counter >= initialNumbersCapacity) {
+			initialNumbersCapacity *= 2;
+            *numbers = realloc(*numbers, initialNumbersCapacity * sizeof(double complex));
+
+			if(*numbers == NULL) {
+				fprintf(stderr, "Something went wrong allocating memory\n");
+				free(numbers);
+				free(line);
+				exit(EXIT_FAILURE);
+			}
+		}
+	}
+	free(line);
+	return counter;
+}
+
 /**
  * @brief Converts an input line to a double complex number.
  * @details Prints the output to the stdout if no outputFilename is specified
@@ -19,7 +111,8 @@
  */
 static double complex convertInputToNumber(char *input) {
     // Variablen für die Real- und Imaginärteile
-    double real = 0.0, imag = 0.0;
+    double real = 0.0;
+	double imag = 0.0;
     
     // Verarbeiten Sie den Eingabestring
     char *endptrReal;
@@ -28,7 +121,7 @@ static double complex convertInputToNumber(char *input) {
     real = strtod(input, &endptrReal);
 	
 	if (endptrReal == input || real == 0.0) {
-        printf("1- Konvertierung fehlgeschlagen.\n");
+        printf("Conversion of real number failed.\n");
 		exit(EXIT_FAILURE);
     }
     
@@ -39,22 +132,21 @@ static double complex convertInputToNumber(char *input) {
 
 	// there is no further string after empty spaces after number
 	if (*endptrReal == '\0' || *endptrReal == '\n') {
-		double complex number = imag;
-		return number;
+		double complex z = real + 0*I;
+		return z;
     }
-    
 
 	char *endptrImag;
 	// check if there is another number
     imag = strtod(endptrReal, &endptrImag);
 	if (endptrReal == endptrImag || imag == 0.0) {
-        printf("Konvertierung fehlgeschlagen.\n");
+        printf("Conversion of imaginary number failed.\n");
 		exit(EXIT_FAILURE);
     }
 	
     // check if there is a *i at the end
     if (*endptrImag != '*' || *(endptrImag+1) != 'i') {
-		printf("Konvertierung fehlgeschlagen.\n");
+        printf("Conversion of imaginary number failed - no trailing *i.\n");
 		exit(EXIT_FAILURE);    
 	}
 
@@ -62,13 +154,11 @@ static double complex convertInputToNumber(char *input) {
 
     // there are further chars after *i
 	if (*endptrImag != '\0' && *endptrImag != '\n') {
-		printf("Konvertierung fehlgeschlagen.\n");
+        printf("Conversion of imaginary number failed - no newline after *i\n");
 		exit(EXIT_FAILURE);  
 	}
     
-    // Erzeugen Sie die komplexe Zahl
     double complex z = real + imag * I;
-	// printf("%f %f*I\n", creal(z), cimag(z));
 	return z;
 }
 
@@ -161,81 +251,3 @@ void fft(float complex A[], int n, int precision, int pipe_even[2], int pipe_odd
 		A[k + n_half] = even[k] - t;
 	}
 }
-
-int main(int argc, char* argv[]) {
-	// Parse command-line options if needed
-	int precision = 6;  // Default precision
-	if (argc > 1 && strcmp(argv[1], "-p") == 0) {
-		precision = 3;
-	}
-
-	char *line = NULL;
-	size_t len = 0;
-	ssize_t nread;
-	float complex A[100];  // Adjust the size as needed
-	int initialCapacity = 2;
-	float complex *numbers = (float complex *)calloc(initialCapacity, sizeof(float complex));
-
-	if(numbers == NULL) {
-		printf("Something went wrong allocating memory");
-		exit(EXIT_FAILURE);
-	}
-
-	int n = 0;
-	while((nread = getline(&line, &len, stdin)) != -1) {
-		A[n] = 	convertInputToNumber(line);
-		n++;
-
-		if(n >= initialCapacity) {
-			initialCapacity *= 2;
-			numbers = realloc(numbers, initialCapacity * sizeof(float complex));
-
-			if(numbers == NULL) {
-				fprintf(stderr, "Something went wrong allocating memory\n");
-				free(numbers);
-				exit(EXIT_FAILURE);
-			}
-		}
-	}
-	free(line);
-
-	// Just print the number
-	if(n == 1) {
-		printf("%.*f %.*f*i\n", precision, creal(A[0]), precision, cimag(A[0]));
-		exit(EXIT_SUCCESS);
-	}
-
-	// Check for valid input
-	if (n <= 0 || n % 2 != 0 || (n & (n - 1)) != 0) {
-		fprintf(stderr, "Invalid input.\n");
-		free(numbers);
-		exit(EXIT_FAILURE);
-	}
-
-	// Create pipes for communication with child processes
-	int pipe_even[2];
-	int pipe_odd[2];
-
-	if (pipe(pipe_even) == -1 || pipe(pipe_odd) == -1) {
-		fprintf(stderr, "Pipe creation failed.\n");
-		free(numbers);
-		exit(EXIT_FAILURE);
-	}
-
-	// Perform FFT
-	//fft(A, n, precision, pipe_even, pipe_odd);
-	
-	for(int i = 0; i < n; i++) {
-		printf("%.*f %.*f*i\n", precision, creal(A[i]), precision, cimag(A[i]));
-	}
-
-	// Close pipes
-	close(pipe_even[0]);
-	close(pipe_even[1]);
-	close(pipe_odd[0]);
-	close(pipe_odd[1]);
-	free(numbers);
-
-	exit(EXIT_SUCCESS);
-}
-
