@@ -31,7 +31,6 @@ int main(int argc, char* argv[]) {
 
 	int numbersCount = readInput(&numbers);
 
-	printf("numbers in: %d", numbersCount);
 	// Just print the number
 	if(numbersCount == 1) {
 		printf("%.*f %.*f*i\n", precision, creal(numbers[0]), precision, cimag(numbers[0]));
@@ -40,10 +39,22 @@ int main(int argc, char* argv[]) {
 
 	// Check for valid input
 	if (numbersCount <= 0 || numbersCount % 2 != 0 || (numbersCount & (numbersCount - 1)) != 0) {
-		fprintf(stderr, "Invalid input %d.\n", numbersCount);
+		fprintf(stderr, "Invalid amount of numbers in input:  %d.\n", numbersCount);
 		free(numbers);
 		exit(EXIT_FAILURE);
 	}
+
+    // create pipes for children
+    int pipes[4][2];
+    for (int i = 0; i < 4; i++) {
+        // error in pipe creation
+        if(pipe(pipes[i]) == -1) {
+            fprintf(stderr, "Pipe creation failure.\n");
+            free(numbers);
+            exit(EXIT_FAILURE);
+        }
+    }
+
 
 	free(numbers);
 
@@ -81,7 +92,6 @@ static int readInput(double complex** numbers) {
 
 	int counter = 0;
 	while((nread = getline(&line, &len, stdin)) != -1) {
-		//double complex n = convertInputToNumber(line);
 		(*numbers)[counter] = convertInputToNumber(line);
 		counter++;
         printf("in readInput: %f %f*i\n", creal((*numbers)[counter - 1]), cimag((*numbers)[counter - 1]));
