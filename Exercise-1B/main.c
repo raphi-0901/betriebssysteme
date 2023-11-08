@@ -16,8 +16,15 @@ int initialNumbersCapacity = 1;
 static double complex convertInputToNumber(char *input);
 static void fft(float complex A[], int n, int precision, int pipe_even[2], int pipe_odd[2]);
 static int readInput(double complex** numbers);
+static void createChildProcesses(int pipes[2][2], int* even, int* odd);
+static void writeToChildProcesses(int pipes[2][2], int numbersAmount, double complex* numbers);
+static void waitForChildProcesses(pid_t *even, pid_t *odd);
+static void handleChildProcessResponse(int numbersAmount, FILE* fileE, FILE* fileO);
+
+char* name;
 
 int main(int argc, char* argv[]) {
+    name = argv[0];
 	// Parse command-line options if needed
 	int precision = 6;  // Default precision
 	if (argc > 1 && strcmp(argv[1], "-p") == 0) {
@@ -45,8 +52,8 @@ int main(int argc, char* argv[]) {
 	}
 
     // create pipes for children
-    int pipes[4][2];
-    for (int i = 0; i < 4; i++) {
+    int pipes[2][2];
+    for (int i = 0; i < 2; i++) {
         // error in pipe creation
         if(pipe(pipes[i]) == -1) {
             fprintf(stderr, "Pipe creation failure.\n");
@@ -55,9 +62,22 @@ int main(int argc, char* argv[]) {
         }
     }
 
-
+    pid_t even;
+    pid_t odd;
+    createChildProcesses(pipes, &even, &odd);
+    writeToChildProcesses(pipes, numbersCount, numbers);
 	free(numbers);
 
+    // wait for child processes
+    waitForChildProcesses(&even, &odd);
+
+    FILE *fileE = fdopen(pipes[0][0], "r"); //opens pipe as file
+    FILE *fileO = fdopen(pipes[1][0], "r"); //opens pipe as file
+
+    handleChildProcessResponse(numbersCount, fileE, fileO);
+
+    fclose(fileE);
+    fclose(fileO);
 	// // Create pipes for communication with child processes
 	// int pipe_even[2];
 	// int pipe_odd[2];
@@ -85,6 +105,134 @@ int main(int argc, char* argv[]) {
 	// exit(EXIT_SUCCESS);
 }
 
+static void handleChildProcessResponse(int numbersAmount, FILE* fileE, FILE* fileO){
+    double complex *newNumbers = malloc(sizeof(double complex) * (numbersAmount/2)); //saves new calculated numbers to print later
+
+    char *oline = NULL;       //read string with o values
+    char *eline = NULL;       //read string with e values
+
+    size_t olength = 0;       //size of string for getline
+    size_t elength = 0;       //size of string for getline
+
+    for (int k = 0; k < numbersAmount / 2; k++)
+    {
+        double complex new1; //saves new calculated value
+        double complex new2; //saves new calculated value
+
+        getline(&eline, &elength, fileE);   // todo handle possible error
+
+        double complex e = convertInputToNumber(eline);
+
+        getline(&oline, &olength, fileO);   // todo handle possible error
+
+        double complex o = convertInputToNumber(oline);
+
+        new1 = cos((-(2 * PI) / numbersAmount) * k);
+        new1 += sin((-(2 * PI) / numbersAmount) * k) * I;
+        new1 *= o;
+        new1 += e;
+
+        fprintf(stdout, "%.6f %.6f *i\n", creal(new1), cimag(new1));    // we can print this number immediately since those should be displayed in the same order as they are calcualted
+
+        new2 = cos((-(2 * PI) / numbersAmount) * k);
+        new2 += sin((-(2 * PI) / numbersAmount) * k) * I;
+        new2 *= o;
+        new2 = e - new2;
+        newNumbers[k] = new2;                                           // we have to save this number since those are printed only AFTER all new1 are printed
+    }
+    free(oline);
+    free(eline);
+
+
+    for(int i = 0; i < numbersAmount/2; i++){ // now print all the new2 numbers
+        fprintf(stdout, "%.6f %.6f *i\n", creal(newNumbers[i]), cimag(newNumbers[i]));
+    }
+
+    free(newNumbers);
+}
+
+
+static void waitForChildProcesses(pid_t *even, pid_t *odd) {
+    int status;
+    waitpid(*even, &status, 0);
+    pid_t terminatedChildPID = waitpid(*even, &status, 0);
+    if (terminatedChildPID == -1) {
+        perror("waitpid even");
+        exit(EXIT_FAILURE);
+    }
+    // Error in child
+    if (WIFEXITED(status) != 1) {
+        printf("Child-Prozess %d wurde mit einem unbekannten Status beendet\n", terminatedChildPID);
+    }
+
+    waitpid(*odd, &status, 0);
+    terminatedChildPID = waitpid(*odd, &status, 0);
+    if (terminatedChildPID == -1) {
+        perror("waitpid odd");
+        exit(EXIT_FAILURE);
+    }
+    // Error in child
+    if (WIFEXITED(status) != 1) {
+        printf("Child-Prozess %d wurde mit einem unbekannten Status beendet\n", terminatedChildPID);
+    }
+}
+
+static void writeToChildProcesses(int pipes[2][2], int numbersAmount, double complex* numbers) {
+    char floatToString[1000];
+
+    for (int i = 0; i < numbersAmount; i++) {
+        snprintf(floatToString, sizeof(floatToString), "%.5f %.5f*i\n", creal(numbers[i]), cimag(numbers[i]));
+        write(pipes[i % 2][1], floatToString, strlen(floatToString));
+    }
+}
+
+static void createChildProcesses(int pipes[2][2], int* even, int* odd) {
+    *even = fork();
+    if(*even == -1) {
+        fprintf(stderr, "Fork for even failed.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if(*even == 0) {
+        // dup2 pipes
+        if(dup2(pipes[0][0], STDIN_FILENO) == -1 || dup2(pipes[0][1], STDOUT_FILENO) == -1) {
+            fprintf(stderr, "Error in dup2 for even.\n");
+            exit(EXIT_FAILURE);
+        }
+
+        if(execlp(name, name, NULL) == -1) {
+            fprintf(stderr, "Error in execlp for even.\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    *odd = fork();
+    if(*odd == -1) {
+        fprintf(stderr, "Fork for odd failed.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if(*odd == 0) {
+        // dup2 pipes
+        if(dup2(pipes[1][0], STDIN_FILENO) == -1 || dup2(pipes[1][1], STDOUT_FILENO) == -1) {
+            fprintf(stderr, "Error in dup2 for odd.\n");
+            exit(EXIT_FAILURE);
+        }
+
+        if(execlp(name, name, NULL) == -1) {
+            fprintf(stderr, "Error in execlp for odd.\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    // close pipes
+    close(pipes[0][0]);
+    close(pipes[0][1]);
+    close(pipes[1][0]);
+    close(pipes[1][1]);
+}
+
+
 static int readInput(double complex** numbers) {
 	char *line = NULL;
 	size_t len = 0;
@@ -94,8 +242,6 @@ static int readInput(double complex** numbers) {
 	while((nread = getline(&line, &len, stdin)) != -1) {
 		(*numbers)[counter] = convertInputToNumber(line);
 		counter++;
-        printf("in readInput: %f %f*i\n", creal((*numbers)[counter - 1]), cimag((*numbers)[counter - 1]));
-
 
 		if(counter >= initialNumbersCapacity) {
 			initialNumbersCapacity *= 2;
