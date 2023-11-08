@@ -25,11 +25,18 @@ static void writeToChildProcesses(int pipes[4][2], int numbersAmount, double com
 
 static void waitForChildProcesses(pid_t *even, pid_t *odd);
 
-static void handleChildProcessResponse(int numbersAmount, FILE *fileE, FILE *fileO);
+static void handleChildProcessResponse(int numbersAmount, FILE *fileEven, FILE *fileOdd);
 
 char *programmName;
 int precision = 6;
 
+/**
+ * Program entry point.
+ * @brief Reads input numbers and tries to convert it to complex numbers.
+ * @param argc The argument counter.
+ * @param argv The argument vector.
+ * @return EXIT_SUCCESS or EXIT_FAILURE.
+ */
 int main(int argc, char **argv) {
     programmName = argv[0];
     // Parse command-line options if needed
@@ -91,7 +98,14 @@ int main(int argc, char **argv) {
     fclose(fileO);
 }
 
-static void handleChildProcessResponse(int numbersAmount, FILE *fileE, FILE *fileO) {
+/**
+ * Performs butterfly calculation.
+ * @param numbersAmount Amount of numbers in input
+ * @param fileEven FILE-stream of even pipe
+ * @param fileOdd FILE-stream of odd pipe
+ * @return EXIT_FAILURE if child termination was not successful.
+ */
+static void handleChildProcessResponse(int numbersAmount, FILE *fileEven, FILE *fileOdd) {
     double complex *newNumbers = malloc(sizeof(double complex) * (numbersAmount / 2)); //saves new calculated numbers to print later
 
     char *oddLine = NULL;
@@ -103,10 +117,10 @@ static void handleChildProcessResponse(int numbersAmount, FILE *fileE, FILE *fil
     for (int k = 0; k < numbersAmount / 2; k++) {
         float complex t = (cos((((-2 * PI) / numbersAmount)) * k) + I * sin(((-2 * PI) / numbersAmount) * k));
 
-        getline(&evenLine, &evenLength, fileE);
+        getline(&evenLine, &evenLength, fileEven);
         double complex even = convertInputToNumber(evenLine);
 
-        getline(&oddLine, &oddLength, fileO);
+        getline(&oddLine, &oddLength, fileOdd);
         double complex odd = convertInputToNumber(oddLine);
 
         newNumbers[k] = even + t * odd;
@@ -122,6 +136,12 @@ static void handleChildProcessResponse(int numbersAmount, FILE *fileE, FILE *fil
     free(newNumbers);
 }
 
+/**
+ * Waits for children to finish their process.
+ * @param even ProcessID of even child
+ * @param odd ProcessID of odd child
+ * @return EXIT_FAILURE if child termination was not successful.
+ */
 static void waitForChildProcesses(pid_t *even, pid_t *odd) {
     int status;
     waitpid(*even, &status, 0);
@@ -148,6 +168,13 @@ static void waitForChildProcesses(pid_t *even, pid_t *odd) {
     }
 }
 
+/**
+ * Writes input to child processes.
+ * @brief Writes the input of the parent process to the stdin of the child process.
+ * @param pipes Pipes of children
+ * @param numbersAmount amount of numbers
+ * @param numbers Pointer to numbers
+ */
 static void writeToChildProcesses(int pipes[4][2], int numbersAmount, double complex* numbers) {
     char floatToString[100000];
     printf("write to childs");
@@ -157,6 +184,12 @@ static void writeToChildProcesses(int pipes[4][2], int numbersAmount, double com
     }
 }
 
+/**
+ * Creates child processes.
+ * @brief Creates two child processes and redirected the stdin and stdout of the processes to the pipes..
+ * @param pipes Pipes for redirecting child process inputs/outputs
+ * @return EXIT_FAILURE if there is any problem with fork or dup2.
+ */
 static void createChildProcesses(int pipes[4][2], int *even, int *odd) {
     *even = fork();
     if (*even == -1) {
@@ -221,8 +254,14 @@ static void createChildProcesses(int pipes[4][2], int *even, int *odd) {
     }
 }
 
-
-static int readInput(double complex **numbers) {
+/**
+ * Reads input.
+ * @brief Reads the input from stdin and tries to convert it to a complex double. If this successfully converted, it gets added to the number array.
+ * @details Exits the program if the input does not match a real or imaginary number.
+ * @param numbers Pointer to numbers array
+ * @return amount of numbers saved in numbers. If there is a problem in converting the input, EXIT_FAILURE gets returned.
+ */
+static int readInput(double complex *numbers[]) {
     char *line = NULL;
     size_t len = 0;
     ssize_t nread;
@@ -254,9 +293,11 @@ static int readInput(double complex **numbers) {
 
 /**
  * @brief Converts an input line to a double complex number.
- * @details Prints the output to the stdout if no outputFilename is specified
- * @param input Input to check
- * @return EXIT_FAILURE if input is not a (complex number)
+ * @details does not allow letters in between, if there is a second number, it has to end with *i\n.
+ * Following inputs are getting converted (comma-separated means \n): 12; -0.43 4*i;
+ * This ones are not getting matched: 12s; -0.43 4; 6*i; 3 6*I; -4 -4.234*isdf;
+ * @param input Input to convert
+ * @return converted complex number. If input does not allow to convert, EXIT_FAILURE gets returned
  */
 static double complex convertInputToNumber(char *input) {
     // Variablen für die Real- und Imaginärteile
@@ -309,94 +350,4 @@ static double complex convertInputToNumber(char *input) {
 
     double complex z = real + imag * I;
     return z;
-}
-
-// Function to perform FFT
-void fft(float complex A[], int n, int precision, int pipe_even[2], int pipe_odd[2]) {
-    if (n <= 1) {
-        // Base case, nothing to do
-        exit(EXIT_SUCCESS);
-    }
-
-    // Split the array into even and odd parts
-    int n_half = n / 2;
-    float complex even[n_half];
-    float complex odd[n_half];
-    for (int i = 0; i < n_half; i++) {
-        even[i] = A[2 * i];
-        odd[i] = A[2 * i + 1];
-    }
-
-    // Create two child processes
-    pid_t child_even, child_odd;
-    child_even = fork();
-    if (child_even == -1) {
-        fprintf(stderr, "Fork failed.\n");
-        exit(EXIT_FAILURE);
-    }
-
-    if (child_even == 0) {
-        // In the child_even process
-        close(pipe_even[0]);
-        close(pipe_odd[0]);
-        close(pipe_odd[1]);
-
-        // Perform FFT on the even part
-        fft(even, n_half, precision, pipe_even, pipe_odd);
-
-        // Send the result back to the parent through pipe
-        write(pipe_even[1], even, n_half * sizeof(float complex));
-        close(pipe_even[1]);
-
-        exit(EXIT_SUCCESS);
-    }
-
-    // Parent process
-    child_odd = fork();
-    if (child_odd == -1) {
-        fprintf(stderr, "Fork failed.\n");
-        exit(EXIT_FAILURE);
-    }
-
-    if (child_odd == 0) {
-        // In the child_odd process
-        close(pipe_even[0]);
-        close(pipe_even[1]);
-        close(pipe_odd[0]);
-
-        // Perform FFT on the odd part
-        fft(odd, n_half, precision, pipe_even, pipe_odd);
-
-        // Send the result back to the parent through pipe
-        write(pipe_odd[1], odd, n_half * sizeof(float complex));
-        close(pipe_odd[1]);
-
-        exit(EXIT_SUCCESS);
-    }
-
-    // Parent process
-    close(pipe_even[1]);
-    close(pipe_odd[1]);
-
-    // Wait for child processes to complete
-    int status_even, status_odd;
-    waitpid(child_even, &status_even, 0);
-    waitpid(child_odd, &status_odd, 0);
-    if (status_even != EXIT_SUCCESS || status_odd != EXIT_SUCCESS) {
-        fprintf(stderr, "Child process failed.\n");
-        exit(EXIT_FAILURE);
-    }
-
-    // Read the results from child processes
-    read(pipe_even[0], even, n_half * sizeof(float complex));
-    read(pipe_odd[0], odd, n_half * sizeof(float complex));
-    close(pipe_even[0]);
-    close(pipe_odd[0]);
-
-    // Combine results using the butterfly operation
-    for (int k = 0; k < n_half; k++) {
-        float complex t = (cos((((-2 * PI) / n)) * k) + I * sin(((-2 * PI) / n) * k)) * odd[k];
-        A[k] = even[k] + t;
-        A[k + n_half] = even[k] - t;
-    }
 }
