@@ -109,7 +109,8 @@ int main(int argc, char **argv) {
  * @return EXIT_FAILURE if child termination was not successful.
  */
 static void handleChildProcessResponse(int numbersAmount, FILE *fileEven, FILE *fileOdd) {
-    double complex *newNumbers = malloc(sizeof(double complex) * (numbersAmount / 2)); //saves new calculated numbers to print later
+    double complex *newNumbers = malloc(
+            sizeof(double complex) * (numbersAmount / 2)); //saves new calculated numbers to print later
 
     char *oddLine = NULL;
     char *evenLine = NULL;
@@ -176,12 +177,32 @@ static void waitForChildProcesses(pid_t *even, pid_t *odd) {
  * @param numbersAmount amount of numbers
  * @param numbers Pointer to numbers
  */
-static void writeToChildProcesses(int pipes[4][2], int numbersAmount, double complex* numbers) {
+static void writeToChildProcesses(int pipes[4][2], int numbersAmount, double complex *numbers) {
     char floatToString[100000];
     printf("write to childs");
     for (int i = 0; i < numbersAmount; i++) {
-        snprintf(floatToString, sizeof(floatToString), "%.*f %.*f*i\n", precision, creal(numbers[i]), precision, cimag(numbers[i]));
+        snprintf(floatToString, sizeof(floatToString), "%.*f %.*f*i\n", precision, creal(numbers[i]), precision,
+                 cimag(numbers[i]));
         write(pipes[i % 2 == 0 ? PIPE_EVEN_WRITE : PIPE_ODD_WRITE][1], floatToString, strlen(floatToString));
+    }
+}
+
+static void dup_needed_pipes(int pipeAmount, int pipes[pipeAmount][2], int neededReadPipe, int neededWritePipe) {
+    for (int i = 0; i < pipeAmount; i++) {
+        if (i == neededReadPipe) {
+            if (dup2(pipes[i][1], STDOUT_FILENO) == -1) {
+                fprintf(stderr, "failure");
+                exit(EXIT_FAILURE);
+            }
+        } else if (i == neededWritePipe) {
+            if (dup2(pipes[i][0], STDIN_FILENO) == -1) {
+                fprintf(stderr, "failure");
+                exit(EXIT_FAILURE);
+            }
+        }
+
+        close(pipes[i][1]);
+        close(pipes[i][0]);
     }
 }
 
@@ -201,21 +222,8 @@ static void createChildProcesses(int pipes[4][2], int *even, int *odd) {
     if (*even == 0) {
         //printf("duplicate even pipes\n");
 
-        // close unused pipes
-        close(pipes[PIPE_ODD_READ][0]);
-        close(pipes[PIPE_ODD_WRITE][0]);
-        close(pipes[PIPE_ODD_READ][1]);
-        close(pipes[PIPE_ODD_WRITE][1]);
+        dup_needed_pipes(4, pipes, PIPE_EVEN_READ, PIPE_EVEN_WRITE);
 
-        close(pipes[PIPE_EVEN_READ][1]);
-        close(pipes[PIPE_EVEN_WRITE][0]);
-
-        if(dup2(pipes[PIPE_EVEN_WRITE][1], STDOUT_FILENO) == -1 || dup2(pipes[PIPE_EVEN_READ][0], STDIN_FILENO) == -1) {
-            fprintf(stderr, "Error in dup2 for even.\n");
-            exit(EXIT_FAILURE);
-        }
-        close(pipes[PIPE_EVEN_READ][0]);
-        close(pipes[PIPE_EVEN_WRITE][1]);
 
         if (execlp(programmName, programmName, NULL) == -1) {
             fprintf(stderr, "Error in execlp for even.\n");
@@ -232,17 +240,9 @@ static void createChildProcesses(int pipes[4][2], int *even, int *odd) {
 
     if (*odd == 0) {
         //printf("duplicate odd pipes\n");
+        dup_needed_pipes(4, pipes, PIPE_ODD_READ, PIPE_ODD_WRITE);
 
-        // close unused pipes
-        close(pipes[PIPE_EVEN_READ][0]);
-        close(pipes[PIPE_EVEN_WRITE][0]);
-        close(pipes[PIPE_EVEN_READ][1]);
-        close(pipes[PIPE_EVEN_WRITE][1]);
-
-        close(pipes[PIPE_ODD_READ][1]);
-        close(pipes[PIPE_ODD_WRITE][0]);
-
-        if(dup2(pipes[PIPE_ODD_WRITE][1], STDOUT_FILENO) == -1 || dup2(pipes[PIPE_ODD_READ][0], STDIN_FILENO) == -1) {
+        if (dup2(pipes[PIPE_ODD_WRITE][1], STDOUT_FILENO) == -1 || dup2(pipes[PIPE_ODD_READ][0], STDIN_FILENO) == -1) {
             fprintf(stderr, "Error in dup2 for odd.\n");
             exit(EXIT_FAILURE);
         }
@@ -254,12 +254,6 @@ static void createChildProcesses(int pipes[4][2], int *even, int *odd) {
             exit(EXIT_FAILURE);
         }
         return;
-    }
-
-    // close pipes
-    for(int i = 0; i < 4; i++) {
-        close(pipes[i][0]);
-        close(pipes[i][1]);
     }
 }
 
