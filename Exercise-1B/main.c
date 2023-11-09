@@ -40,7 +40,6 @@ int precision = 6;
  * @return EXIT_SUCCESS or EXIT_FAILURE.
  */
 int main(int argc, char **argv) {
-    fprintf(stderr, "started process\n");
     programmName = argv[0];
     // Parse command-line options if needed
     if (argc > 1 && strcmp(argv[1], "-p") == 0) {
@@ -48,15 +47,11 @@ int main(int argc, char **argv) {
     }
     double complex *numbers = (double complex *) calloc(initialNumbersCapacity, sizeof(double complex));
     if (numbers == NULL) {
-        printf("Something went wrong allocating memory\n");
+        fprintf(stderr, "Something went wrong allocating memory\n");
         exit(EXIT_FAILURE);
     }
 
-    fprintf(stderr, "alive in line 55\n");
     int numbersAmount = readInput(&numbers);
-    fprintf(stderr, "alive after line 55\n");
-    fprintf(stderr, "%p\n", numbers);
-    fprintf(stderr, "%d\n", numbersAmount);
 
     // Just print the number
     if (numbersAmount == 1) {
@@ -85,9 +80,18 @@ int main(int argc, char **argv) {
 
     pid_t even;
     pid_t odd;
-    writeToChildProcesses(pipes, numbersAmount, numbers);
     createChildProcesses(pipes, &even, &odd);
+
+    close(pipes[PIPE_EVEN_WRITE][0]);
+    close(pipes[PIPE_ODD_WRITE][0]);
+    close(pipes[PIPE_EVEN_READ][1]);
+    close(pipes[PIPE_ODD_READ][1]);
+
+    writeToChildProcesses(pipes, numbersAmount, numbers);
     free(numbers);
+
+    close(pipes[PIPE_EVEN_WRITE][1]);
+    close(pipes[PIPE_ODD_WRITE][1]);
 
     // wait for child processes
     waitForChildProcesses(&even, &odd);
@@ -99,6 +103,7 @@ int main(int argc, char **argv) {
 
     fclose(fileE);
     fclose(fileO);
+    exit(EXIT_SUCCESS);
 }
 
 /**
@@ -130,14 +135,14 @@ static void handleChildProcessResponse(int numbersAmount, FILE *fileEven, FILE *
         newNumbers[k] = even + t * odd;
         newNumbers[k + numbersAmount / 2] = even - t * odd;
     }
-    free(oddLine);
-    free(evenLine);
+    //free(oddLine);
+    //free(evenLine);
 
     for (int i = 0; i < numbersAmount / 2; i++) {
-        fprintf(stdout, "%.*f %.*f*i\n", precision, creal(newNumbers[0]), precision, cimag(newNumbers[0]));
+        printf( "%.*f %.*f*i\n", precision, creal(newNumbers[0]), precision, cimag(newNumbers[0]));
     }
 
-    free(newNumbers);
+    //free(newNumbers);
 }
 
 /**
@@ -150,23 +155,25 @@ static void waitForChildProcesses(pid_t *even, pid_t *odd) {
     int status;
     pid_t terminatedChildPID = waitpid(*even, &status, 0);
     if (terminatedChildPID == -1) {
-        perror("child failed to terminate: even\n");
+        fprintf(stderr, "child failed to terminate: even\n");
         exit(EXIT_FAILURE);
     }
     // Error in child
     if (WIFEXITED(status) != 1) {
-        printf("Child-Prozess %d wurde mit einem unbekannten Status beendet\n", terminatedChildPID);
+        fprintf(stderr, "Child-Prozess %d wurde mit einem unbekannten Status beendet\n", terminatedChildPID);
+        exit(EXIT_FAILURE);
     }
 
     terminatedChildPID = waitpid(*odd, &status, 0);
     if (terminatedChildPID == -1) {
-        perror("child failed to terminate: odd\n");
+        fprintf(stderr, "child failed to terminate: odd\n");
         exit(EXIT_FAILURE);
     }
 
     // Error in child
     if (WIFEXITED(status) != 1) {
-        printf("Child-Prozess %d wurde mit einem unbekannten Status beendet\n", terminatedChildPID);
+        fprintf(stderr, "Child-Prozess %d wurde mit einem unbekannten Status beendet\n", terminatedChildPID);
+        exit(EXIT_FAILURE);
     }
 }
 
@@ -178,8 +185,8 @@ static void waitForChildProcesses(pid_t *even, pid_t *odd) {
  * @param numbers Pointer to numbers
  */
 static void writeToChildProcesses(int pipes[4][2], int numbersAmount, double complex *numbers) {
+    fprintf(stderr, "write to childs\n");
     char floatToString[100000];
-    printf("write to childs");
     for (int i = 0; i < numbersAmount; i++) {
         snprintf(floatToString, sizeof(floatToString), "%.*f %.*f*i\n", precision, creal(numbers[i]), precision,
                  cimag(numbers[i]));
@@ -191,12 +198,14 @@ static void dup_needed_pipes(int pipeAmount, int pipes[pipeAmount][2], int neede
     for (int i = 0; i < pipeAmount; i++) {
         if (i == neededReadPipe) {
             if (dup2(pipes[i][1], STDOUT_FILENO) == -1) {
-                fprintf(stderr, "failure");
+                fprintf(stderr, "failure in creating dup2");
                 exit(EXIT_FAILURE);
             }
-        } else if (i == neededWritePipe) {
+        }
+
+        if (i == neededWritePipe) {
             if (dup2(pipes[i][0], STDIN_FILENO) == -1) {
-                fprintf(stderr, "failure");
+                fprintf(stderr, "failure in creating dup2");
                 exit(EXIT_FAILURE);
             }
         }
@@ -213,6 +222,7 @@ static void dup_needed_pipes(int pipeAmount, int pipes[pipeAmount][2], int neede
  * @return EXIT_FAILURE if there is any problem with fork or dup2.
  */
 static void createChildProcesses(int pipes[4][2], int *even, int *odd) {
+    fprintf(stderr, "childs\n");
     *even = fork();
     if (*even == -1) {
         fprintf(stderr, "Fork for even failed.\n");
@@ -220,11 +230,7 @@ static void createChildProcesses(int pipes[4][2], int *even, int *odd) {
     }
 
     if (*even == 0) {
-        //printf("duplicate even pipes\n");
-
         dup_needed_pipes(4, pipes, PIPE_EVEN_READ, PIPE_EVEN_WRITE);
-
-
         if (execlp(programmName, programmName, NULL) == -1) {
             fprintf(stderr, "Error in execlp for even.\n");
             exit(EXIT_FAILURE);
@@ -239,16 +245,7 @@ static void createChildProcesses(int pipes[4][2], int *even, int *odd) {
     }
 
     if (*odd == 0) {
-        //printf("duplicate odd pipes\n");
         dup_needed_pipes(4, pipes, PIPE_ODD_READ, PIPE_ODD_WRITE);
-
-        if (dup2(pipes[PIPE_ODD_WRITE][1], STDOUT_FILENO) == -1 || dup2(pipes[PIPE_ODD_READ][0], STDIN_FILENO) == -1) {
-            fprintf(stderr, "Error in dup2 for odd.\n");
-            exit(EXIT_FAILURE);
-        }
-        close(pipes[PIPE_ODD_READ][0]);
-        close(pipes[PIPE_ODD_WRITE][1]);
-
         if (execlp(programmName, programmName, NULL) == -1) {
             fprintf(stderr, "Error in execlp for odd.\n");
             exit(EXIT_FAILURE);
@@ -314,7 +311,7 @@ static double complex convertInputToNumber(char *input) {
     real = strtod(input, &endptrReal);
 
     if (endptrReal == input || real == 0.0) {
-        printf("Conversion of real number failed.\n");
+        fprintf(stderr,"Conversion of real number failed: Line entered: '%s'.\n", input);
         exit(EXIT_FAILURE);
     }
 
@@ -330,16 +327,16 @@ static double complex convertInputToNumber(char *input) {
     }
 
     char *endptrImag;
-    // check if there is another number
+    // check if there is another number - if not just return the real part of the number
     imag = strtod(endptrReal, &endptrImag);
     if (endptrReal == endptrImag || imag == 0.0) {
-        printf("Conversion of imaginary number failed.\n");
-        exit(EXIT_FAILURE);
+        double complex z = real + 0 * I;
+        return z;
     }
 
     // check if there is a *i at the end
     if (*endptrImag != '*' || *(endptrImag + 1) != 'i') {
-        printf("Conversion of imaginary number failed - no trailing *i.\n");
+        fprintf(stderr, "Conversion of imaginary number failed - no trailing *i.\n");
         exit(EXIT_FAILURE);
     }
 
@@ -347,7 +344,7 @@ static double complex convertInputToNumber(char *input) {
 
     // there are further chars after *i
     if (*endptrImag != '\0' && *endptrImag != '\n') {
-        printf("Conversion of imaginary number failed - no newline after *i\n");
+        fprintf(stderr, "Conversion of imaginary number failed - no newline after *i\n");
         exit(EXIT_FAILURE);
     }
 
