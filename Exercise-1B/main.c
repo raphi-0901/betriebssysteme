@@ -56,7 +56,6 @@ int main(int argc, char **argv) {
     if (numbersAmount == 1) {
         double real = roundToDecimals(creal(numbers[0]));
         double imag = roundToDecimals(cimag(numbers[0]));
-        //fprintf(stderr, "converted %f to %f\n", creal(numbers[0]), real);
         printf("%.*f %.*f*i\n", precision, real, precision, imag);
         free(numbers);
         exit(EXIT_SUCCESS);
@@ -288,10 +287,6 @@ static int readInput(double complex *numbers[]) {
     while ((getline(&line, &len, stdin)) != -1) {
         (*numbers)[counter] = convertInputToNumber(line);
         counter++;
-
-//        if(counter > 3) {
-//            break;
-//        }
 
         if (counter >= initialNumbersCapacity) {
             initialNumbersCapacity *= 2;
