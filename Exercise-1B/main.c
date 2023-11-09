@@ -25,7 +25,7 @@ static void createChildProcesses(int pipes[4][2], int *evenProcess, int *oddProc
 
 static void writeToChildProcesses(int pipes[4][2], int numbersAmount, double complex *numbers);
 
-static void waitForChildProcesses(pid_t *evenProcess, pid_t *oddProcess);
+static void waitForChildProcesses(const pid_t *evenProcess, const pid_t *oddProcess);
 
 static void handleChildProcessResponse(int numbersAmount, FILE *fileEven, FILE *fileOdd);
 
@@ -88,7 +88,6 @@ int main(int argc, char **argv) {
     close(pipes[PIPE_ODD_READ][1]);
 
     writeToChildProcesses(pipes, numbersAmount, numbers);
-    fprintf(stderr, "free 6\n");
     free(numbers);
 
     close(pipes[PIPE_EVEN_WRITE][1]);
@@ -99,6 +98,9 @@ int main(int argc, char **argv) {
 
     FILE *evenFile = fdopen(pipes[PIPE_EVEN_READ][0], "r"); //opens pipe as file
     FILE *oddFile = fdopen(pipes[PIPE_ODD_READ][0], "r"); //opens pipe as file
+
+    close(pipes[PIPE_EVEN_WRITE][0]);
+    close(pipes[PIPE_ODD_WRITE][0]);
 
     handleChildProcessResponse(numbersAmount, evenFile, oddFile);
 
@@ -116,7 +118,7 @@ int main(int argc, char **argv) {
  */
 static void handleChildProcessResponse(int numbersAmount, FILE *fileEven, FILE *fileOdd) {
     double complex *newNumbers = malloc(
-            sizeof(double complex) * (numbersAmount / 2)); //saves new calculated numbers to print later
+            sizeof(double complex) * numbersAmount); //saves new calculated numbers to print later
 
     char *oddLine = NULL;
     char *evenLine = NULL;
@@ -136,14 +138,13 @@ static void handleChildProcessResponse(int numbersAmount, FILE *fileEven, FILE *
         newNumbers[k] = even + t * odd;
         newNumbers[k + numbersAmount / 2] = even - t * odd;
     }
-
-    for (int i = 0; i < numbersAmount / 2; i++) {
-        printf( "%.*f %.*f*i\n", precision, creal(newNumbers[0]), precision, cimag(newNumbers[0]));
-    }
-
-    fprintf(stderr, "free 1, %p, %p, %p\n", oddLine, evenLine, newNumbers);
     free(oddLine);
     free(evenLine);
+
+    for (int i = 0; i < numbersAmount; i++) {
+        printf( "%.*f %.*f*i\n", precision, creal(newNumbers[i]), precision, cimag(newNumbers[i]));
+    }
+
     free(newNumbers);
 }
 
@@ -153,7 +154,7 @@ static void handleChildProcessResponse(int numbersAmount, FILE *fileEven, FILE *
  * @param oddProcess ProcessID of oddProcess child
  * @return EXIT_FAILURE if child termination was not successful.
  */
-static void waitForChildProcesses(pid_t *evenProcess, pid_t *oddProcess) {
+static void waitForChildProcesses(const pid_t *evenProcess, const pid_t *oddProcess) {
     int status;
     pid_t terminatedChildPID = waitpid(*evenProcess, &status, 0);
     if (terminatedChildPID == -1) {
@@ -162,7 +163,7 @@ static void waitForChildProcesses(pid_t *evenProcess, pid_t *oddProcess) {
     }
     // Error in child
     if (WIFEXITED(status) != 1) {
-        fprintf(stderr, "Child-Prozess %d wurde mit einem unbekannten Status beendet\n", terminatedChildPID);
+        fprintf(stderr, "Even Child-Prozess %d wurde mit einem unbekannten Status beendet: %d\n", terminatedChildPID, status);
         exit(EXIT_FAILURE);
     }
 
@@ -174,7 +175,7 @@ static void waitForChildProcesses(pid_t *evenProcess, pid_t *oddProcess) {
 
     // Error in child
     if (WIFEXITED(status) != 1) {
-        fprintf(stderr, "Child-Prozess %d wurde mit einem unbekannten Status beendet\n", terminatedChildPID);
+        fprintf(stderr, "Odd Child-Prozess %d wurde mit einem unbekannten Status beendet: %d\n", terminatedChildPID, status);
         exit(EXIT_FAILURE);
     }
 }
@@ -187,7 +188,6 @@ static void waitForChildProcesses(pid_t *evenProcess, pid_t *oddProcess) {
  * @param numbers Pointer to numbers
  */
 static void writeToChildProcesses(int pipes[4][2], int numbersAmount, double complex *numbers) {
-    fprintf(stderr, "write to childs\n");
     char floatToString[100000];
     for (int i = 0; i < numbersAmount; i++) {
         snprintf(floatToString, sizeof(floatToString), "%.*f %.*f*i\n", precision, creal(numbers[i]), precision,
@@ -196,7 +196,7 @@ static void writeToChildProcesses(int pipes[4][2], int numbersAmount, double com
     }
 }
 
-static void dup_needed_pipes(int pipeAmount, int pipes[pipeAmount][2], int neededReadPipe, int neededWritePipe) {
+static void dupNeededPipes(int pipeAmount, int pipes[pipeAmount][2], int neededReadPipe, int neededWritePipe) {
     for (int i = 0; i < pipeAmount; i++) {
         if (i == neededReadPipe) {
             if (dup2(pipes[i][1], STDOUT_FILENO) == -1) {
@@ -224,7 +224,6 @@ static void dup_needed_pipes(int pipeAmount, int pipes[pipeAmount][2], int neede
  * @return EXIT_FAILURE if there is any problem with fork or dup2.
  */
 static void createChildProcesses(int pipes[4][2], int *evenProcess, int *oddProcess) {
-    fprintf(stderr, "childs\n");
     *evenProcess = fork();
     if (*evenProcess == -1) {
         fprintf(stderr, "Fork for evenProcess failed.\n");
@@ -232,7 +231,7 @@ static void createChildProcesses(int pipes[4][2], int *evenProcess, int *oddProc
     }
 
     if (*evenProcess == 0) {
-        dup_needed_pipes(4, pipes, PIPE_EVEN_READ, PIPE_EVEN_WRITE);
+        dupNeededPipes(4, pipes, PIPE_EVEN_READ, PIPE_EVEN_WRITE);
         if (execlp(programmName, programmName, NULL) == -1) {
             fprintf(stderr, "Error in execlp for evenProcess.\n");
             exit(EXIT_FAILURE);
@@ -247,7 +246,7 @@ static void createChildProcesses(int pipes[4][2], int *evenProcess, int *oddProc
     }
 
     if (*oddProcess == 0) {
-        dup_needed_pipes(4, pipes, PIPE_ODD_READ, PIPE_ODD_WRITE);
+        dupNeededPipes(4, pipes, PIPE_ODD_READ, PIPE_ODD_WRITE);
         if (execlp(programmName, programmName, NULL) == -1) {
             fprintf(stderr, "Error in execlp for oddProcess.\n");
             exit(EXIT_FAILURE);
@@ -282,13 +281,12 @@ static int readInput(double complex *numbers[]) {
 
             if (*numbers == NULL) {
                 fprintf(stderr, "Something went wrong allocating memory\n");
-                free(numbers);
+                free(*numbers);
                 free(line);
                 exit(EXIT_FAILURE);
             }
         }
     }
-    fprintf(stderr, "free 3\n");
     free(line);
     return counter;
 }
