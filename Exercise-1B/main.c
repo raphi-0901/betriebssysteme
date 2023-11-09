@@ -10,12 +10,14 @@
 #include <errno.h>
 
 #define PI 3.141592654
+#define PIPE_EVEN_WRITE 0
+#define PIPE_EVEN_READ 1
+#define PIPE_ODD_WRITE 2
+#define PIPE_ODD_READ 3
 
 int initialNumbersCapacity = 1;
 
 static double complex convertInputToNumber(char *input);
-
-static void fft(float complex A[], int n, int precision, int pipe_even[2], int pipe_odd[2]);
 
 static int readInput(double complex **numbers);
 
@@ -38,6 +40,7 @@ int precision = 6;
  * @return EXIT_SUCCESS or EXIT_FAILURE.
  */
 int main(int argc, char **argv) {
+    fprintf(stderr, "started process\n");
     programmName = argv[0];
     // Parse command-line options if needed
     if (argc > 1 && strcmp(argv[1], "-p") == 0) {
@@ -49,28 +52,28 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    int numbersCount = readInput(&numbers);
+    fprintf(stderr, "alive in line 55\n");
+    int numbersAmount = readInput(&numbers);
+    fprintf(stderr, "alive after line 55\n");
+    fprintf(stderr, "%p\n", numbers);
+    fprintf(stderr, "%d\n", numbersAmount);
 
     // Just print the number
-    if (numbersCount == 1) {
+    if (numbersAmount == 1) {
         printf("%.*f %.*f*i\n", precision, creal(numbers[0]), precision, cimag(numbers[0]));
         free(numbers);
         exit(EXIT_SUCCESS);
     }
 
     // Check for valid input
-    if (numbersCount <= 0 || numbersCount % 2 != 0 || (numbersCount & (numbersCount - 1)) != 0) {
-        fprintf(stderr, "Invalid amount of numbers in input:  %d.\n", numbersCount);
+    if (numbersAmount <= 0 || numbersAmount % 2 != 0 || (numbersAmount & (numbersAmount - 1)) != 0) {
+        fprintf(stderr, "Invalid amount of numbers in input:  %d.\n", numbersAmount);
         free(numbers);
         exit(EXIT_FAILURE);
     }
 
     // create pipes for children
     int pipes[4][2];
-    // pipe[0] -> even read
-    // pipe[1] -> even write
-    // pipe[2] -> odd read
-    // pipe[3] -> odd write
     for (int i = 0; i < 4; i++) {
         // error in pipe creation
         if (pipe(pipes[i]) == -1) {
@@ -82,17 +85,17 @@ int main(int argc, char **argv) {
 
     pid_t even;
     pid_t odd;
+    writeToChildProcesses(pipes, numbersAmount, numbers);
     createChildProcesses(pipes, &even, &odd);
-    writeToChildProcesses(pipes, numbersCount, numbers);
     free(numbers);
 
     // wait for child processes
     waitForChildProcesses(&even, &odd);
 
-    FILE *fileE = fdopen(pipes[0][0], "r"); //opens pipe as file
-    FILE *fileO = fdopen(pipes[1][0], "r"); //opens pipe as file
+    FILE *fileE = fdopen(pipes[PIPE_EVEN_READ][0], "r"); //opens pipe as file
+    FILE *fileO = fdopen(pipes[PIPE_ODD_READ][0], "r"); //opens pipe as file
 
-    handleChildProcessResponse(numbersCount, fileE, fileO);
+    handleChildProcessResponse(numbersAmount, fileE, fileO);
 
     fclose(fileE);
     fclose(fileO);
@@ -144,10 +147,9 @@ static void handleChildProcessResponse(int numbersAmount, FILE *fileEven, FILE *
  */
 static void waitForChildProcesses(pid_t *even, pid_t *odd) {
     int status;
-    waitpid(*even, &status, 0);
     pid_t terminatedChildPID = waitpid(*even, &status, 0);
     if (terminatedChildPID == -1) {
-        perror("waitpid even\n");
+        perror("child failed to terminate: even\n");
         exit(EXIT_FAILURE);
     }
     // Error in child
@@ -155,10 +157,9 @@ static void waitForChildProcesses(pid_t *even, pid_t *odd) {
         printf("Child-Prozess %d wurde mit einem unbekannten Status beendet\n", terminatedChildPID);
     }
 
-    waitpid(*odd, &status, 0);
     terminatedChildPID = waitpid(*odd, &status, 0);
     if (terminatedChildPID == -1) {
-        perror("waitpid odd\n");
+        perror("child failed to terminate: odd\n");
         exit(EXIT_FAILURE);
     }
 
@@ -180,7 +181,7 @@ static void writeToChildProcesses(int pipes[4][2], int numbersAmount, double com
     printf("write to childs");
     for (int i = 0; i < numbersAmount; i++) {
         snprintf(floatToString, sizeof(floatToString), "%.*f %.*f*i\n", precision, creal(numbers[i]), precision, cimag(numbers[i]));
-        write(pipes[i % 2 == 0 ? 1 : 3][1], floatToString, strlen(floatToString));
+        write(pipes[i % 2 == 0 ? PIPE_EVEN_WRITE : PIPE_ODD_WRITE][1], floatToString, strlen(floatToString));
     }
 }
 
@@ -198,26 +199,29 @@ static void createChildProcesses(int pipes[4][2], int *even, int *odd) {
     }
 
     if (*even == 0) {
-        printf("duplicate even pipes\n");
+        //printf("duplicate even pipes\n");
 
-        // need write pipe on one hand
-        if(dup2(pipes[0][1], STDOUT_FILENO) == -1 || dup2(pipes[1][0], STDIN_FILENO) == -1) {
+        // close unused pipes
+        close(pipes[PIPE_ODD_READ][0]);
+        close(pipes[PIPE_ODD_WRITE][0]);
+        close(pipes[PIPE_ODD_READ][1]);
+        close(pipes[PIPE_ODD_WRITE][1]);
+
+        close(pipes[PIPE_EVEN_READ][1]);
+        close(pipes[PIPE_EVEN_WRITE][0]);
+
+        if(dup2(pipes[PIPE_EVEN_WRITE][1], STDOUT_FILENO) == -1 || dup2(pipes[PIPE_EVEN_READ][0], STDIN_FILENO) == -1) {
             fprintf(stderr, "Error in dup2 for even.\n");
             exit(EXIT_FAILURE);
         }
-
-        // dup2 pipes
-//        if (dup2(pipes[0][0], STDIN_FILENO) == -1 || dup2(pipes[0][1], STDOUT_FILENO) == -1) {
-//            fprintf(stderr, "Error in dup2 for even.\n");
-//            exit(EXIT_FAILURE);
-//        }
-
-        printf("exec\n");
+        close(pipes[PIPE_EVEN_READ][0]);
+        close(pipes[PIPE_EVEN_WRITE][1]);
 
         if (execlp(programmName, programmName, NULL) == -1) {
             fprintf(stderr, "Error in execlp for even.\n");
             exit(EXIT_FAILURE);
         }
+        return;
     }
 
     *odd = fork();
@@ -227,24 +231,29 @@ static void createChildProcesses(int pipes[4][2], int *even, int *odd) {
     }
 
     if (*odd == 0) {
-        printf("duplicate odd pipes\n");
+        //printf("duplicate odd pipes\n");
 
-        // need write pipe on one hand
-        if(dup2(pipes[2][1], STDOUT_FILENO) == -1 || dup2(pipes[3][0], STDIN_FILENO) == -1) {
+        // close unused pipes
+        close(pipes[PIPE_EVEN_READ][0]);
+        close(pipes[PIPE_EVEN_WRITE][0]);
+        close(pipes[PIPE_EVEN_READ][1]);
+        close(pipes[PIPE_EVEN_WRITE][1]);
+
+        close(pipes[PIPE_ODD_READ][1]);
+        close(pipes[PIPE_ODD_WRITE][0]);
+
+        if(dup2(pipes[PIPE_ODD_WRITE][1], STDOUT_FILENO) == -1 || dup2(pipes[PIPE_ODD_READ][0], STDIN_FILENO) == -1) {
             fprintf(stderr, "Error in dup2 for odd.\n");
             exit(EXIT_FAILURE);
         }
-
-        // dup2 pipes
-//        if (dup2(pipes[1][0], STDIN_FILENO) == -1 || dup2(pipes[1][1], STDOUT_FILENO) == -1) {
-//            fprintf(stderr, "Error in dup2 for odd.\n");
-//            exit(EXIT_FAILURE);
-//        }
+        close(pipes[PIPE_ODD_READ][0]);
+        close(pipes[PIPE_ODD_WRITE][1]);
 
         if (execlp(programmName, programmName, NULL) == -1) {
             fprintf(stderr, "Error in execlp for odd.\n");
             exit(EXIT_FAILURE);
         }
+        return;
     }
 
     // close pipes
