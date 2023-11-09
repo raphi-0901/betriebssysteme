@@ -340,6 +340,12 @@ static double complex convertInputToNumber(char *input) {
         return z;
     }
 
+    // next non-empty char is not a number -->
+    if(!(*endptrReal >= '0' && *endptrReal <= '9') && *endptrReal != '-') {
+        fprintf(stderr, "Received false imaginary part.\n");
+        exit(EXIT_FAILURE);
+    }
+
     char *endptrImag;
     // check if there is another number - if not just return the real part of the number
     imag = strtod(endptrReal, &endptrImag);
@@ -371,3 +377,4 @@ static double roundToDecimals(double input) {
     double decimals = pow(10, precision);
     return round(input * decimals) / decimals;
 }
+
