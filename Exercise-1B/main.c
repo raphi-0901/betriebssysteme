@@ -21,11 +21,11 @@ static double complex convertInputToNumber(char *input);
 
 static int readInput(double complex **numbers);
 
-static void createChildProcesses(int pipes[4][2], int *even, int *odd);
+static void createChildProcesses(int pipes[4][2], int *evenProcess, int *oddProcess);
 
 static void writeToChildProcesses(int pipes[4][2], int numbersAmount, double complex *numbers);
 
-static void waitForChildProcesses(pid_t *even, pid_t *odd);
+static void waitForChildProcesses(pid_t *evenProcess, pid_t *oddProcess);
 
 static void handleChildProcessResponse(int numbersAmount, FILE *fileEven, FILE *fileOdd);
 
@@ -78,31 +78,32 @@ int main(int argc, char **argv) {
         }
     }
 
-    pid_t even;
-    pid_t odd;
-    createChildProcesses(pipes, &even, &odd);
+    pid_t evenProcess;
+    pid_t oddProcess;
+    createChildProcesses(pipes, &evenProcess, &oddProcess);
 
     close(pipes[PIPE_EVEN_WRITE][0]);
-    close(pipes[PIPE_ODD_WRITE][0]);
     close(pipes[PIPE_EVEN_READ][1]);
+    close(pipes[PIPE_ODD_WRITE][0]);
     close(pipes[PIPE_ODD_READ][1]);
 
     writeToChildProcesses(pipes, numbersAmount, numbers);
+    fprintf(stderr, "free 6\n");
     free(numbers);
 
     close(pipes[PIPE_EVEN_WRITE][1]);
     close(pipes[PIPE_ODD_WRITE][1]);
 
     // wait for child processes
-    waitForChildProcesses(&even, &odd);
+    waitForChildProcesses(&evenProcess, &oddProcess);
 
-    FILE *fileE = fdopen(pipes[PIPE_EVEN_READ][0], "r"); //opens pipe as file
-    FILE *fileO = fdopen(pipes[PIPE_ODD_READ][0], "r"); //opens pipe as file
+    FILE *evenFile = fdopen(pipes[PIPE_EVEN_READ][0], "r"); //opens pipe as file
+    FILE *oddFile = fdopen(pipes[PIPE_ODD_READ][0], "r"); //opens pipe as file
 
-    handleChildProcessResponse(numbersAmount, fileE, fileO);
+    handleChildProcessResponse(numbersAmount, evenFile, oddFile);
 
-    fclose(fileE);
-    fclose(fileO);
+    fclose(evenFile);
+    fclose(oddFile);
     exit(EXIT_SUCCESS);
 }
 
@@ -135,27 +136,28 @@ static void handleChildProcessResponse(int numbersAmount, FILE *fileEven, FILE *
         newNumbers[k] = even + t * odd;
         newNumbers[k + numbersAmount / 2] = even - t * odd;
     }
-    //free(oddLine);
-    //free(evenLine);
 
     for (int i = 0; i < numbersAmount / 2; i++) {
         printf( "%.*f %.*f*i\n", precision, creal(newNumbers[0]), precision, cimag(newNumbers[0]));
     }
 
-    //free(newNumbers);
+    fprintf(stderr, "free 1, %p, %p, %p\n", oddLine, evenLine, newNumbers);
+    free(oddLine);
+    free(evenLine);
+    free(newNumbers);
 }
 
 /**
  * Waits for children to finish their process.
- * @param even ProcessID of even child
- * @param odd ProcessID of odd child
+ * @param evenProcess ProcessID of evenProcess child
+ * @param oddProcess ProcessID of oddProcess child
  * @return EXIT_FAILURE if child termination was not successful.
  */
-static void waitForChildProcesses(pid_t *even, pid_t *odd) {
+static void waitForChildProcesses(pid_t *evenProcess, pid_t *oddProcess) {
     int status;
-    pid_t terminatedChildPID = waitpid(*even, &status, 0);
+    pid_t terminatedChildPID = waitpid(*evenProcess, &status, 0);
     if (terminatedChildPID == -1) {
-        fprintf(stderr, "child failed to terminate: even\n");
+        fprintf(stderr, "child failed to terminate: evenProcess\n");
         exit(EXIT_FAILURE);
     }
     // Error in child
@@ -164,9 +166,9 @@ static void waitForChildProcesses(pid_t *even, pid_t *odd) {
         exit(EXIT_FAILURE);
     }
 
-    terminatedChildPID = waitpid(*odd, &status, 0);
+    terminatedChildPID = waitpid(*oddProcess, &status, 0);
     if (terminatedChildPID == -1) {
-        fprintf(stderr, "child failed to terminate: odd\n");
+        fprintf(stderr, "child failed to terminate: oddProcess\n");
         exit(EXIT_FAILURE);
     }
 
@@ -221,33 +223,33 @@ static void dup_needed_pipes(int pipeAmount, int pipes[pipeAmount][2], int neede
  * @param pipes Pipes for redirecting child process inputs/outputs
  * @return EXIT_FAILURE if there is any problem with fork or dup2.
  */
-static void createChildProcesses(int pipes[4][2], int *even, int *odd) {
+static void createChildProcesses(int pipes[4][2], int *evenProcess, int *oddProcess) {
     fprintf(stderr, "childs\n");
-    *even = fork();
-    if (*even == -1) {
-        fprintf(stderr, "Fork for even failed.\n");
+    *evenProcess = fork();
+    if (*evenProcess == -1) {
+        fprintf(stderr, "Fork for evenProcess failed.\n");
         exit(EXIT_FAILURE);
     }
 
-    if (*even == 0) {
+    if (*evenProcess == 0) {
         dup_needed_pipes(4, pipes, PIPE_EVEN_READ, PIPE_EVEN_WRITE);
         if (execlp(programmName, programmName, NULL) == -1) {
-            fprintf(stderr, "Error in execlp for even.\n");
+            fprintf(stderr, "Error in execlp for evenProcess.\n");
             exit(EXIT_FAILURE);
         }
         return;
     }
 
-    *odd = fork();
-    if (*odd == -1) {
-        fprintf(stderr, "Fork for odd failed.\n");
+    *oddProcess = fork();
+    if (*oddProcess == -1) {
+        fprintf(stderr, "Fork for oddProcess failed.\n");
         exit(EXIT_FAILURE);
     }
 
-    if (*odd == 0) {
+    if (*oddProcess == 0) {
         dup_needed_pipes(4, pipes, PIPE_ODD_READ, PIPE_ODD_WRITE);
         if (execlp(programmName, programmName, NULL) == -1) {
-            fprintf(stderr, "Error in execlp for odd.\n");
+            fprintf(stderr, "Error in execlp for oddProcess.\n");
             exit(EXIT_FAILURE);
         }
         return;
@@ -264,10 +266,9 @@ static void createChildProcesses(int pipes[4][2], int *even, int *odd) {
 static int readInput(double complex *numbers[]) {
     char *line = NULL;
     size_t len = 0;
-    ssize_t nread;
 
     int counter = 0;
-    while ((nread = getline(&line, &len, stdin)) != -1) {
+    while ((getline(&line, &len, stdin)) != -1) {
         (*numbers)[counter] = convertInputToNumber(line);
         counter++;
 
@@ -287,6 +288,7 @@ static int readInput(double complex *numbers[]) {
             }
         }
     }
+    fprintf(stderr, "free 3\n");
     free(line);
     return counter;
 }
@@ -310,7 +312,8 @@ static double complex convertInputToNumber(char *input) {
     // Suchen Sie nach dem Realteil
     real = strtod(input, &endptrReal);
 
-    if (endptrReal == input || real == 0.0) {
+    if (endptrReal == input) {
+    //if (endptrReal == input || real == 0.0) {
         fprintf(stderr,"Conversion of real number failed: Line entered: '%s'.\n", input);
         exit(EXIT_FAILURE);
     }
