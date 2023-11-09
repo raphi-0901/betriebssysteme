@@ -271,10 +271,6 @@ static int readInput(double complex *numbers[]) {
         (*numbers)[counter] = convertInputToNumber(line);
         counter++;
 
-        if (counter > 3) {
-            break;
-        }
-
         if (counter >= initialNumbersCapacity) {
             initialNumbersCapacity *= 2;
             *numbers = realloc(*numbers, initialNumbersCapacity * sizeof(double complex));
