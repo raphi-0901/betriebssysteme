@@ -5,9 +5,6 @@
 #include <math.h>
 #include <complex.h>
 #include <string.h>
-#include <regex.h>
-#include <ctype.h>
-#include <errno.h>
 
 #define PI 3.141592654
 #define PIPE_EVEN_WRITE 0
@@ -28,6 +25,8 @@ static void writeToChildProcesses(int pipes[4][2], int numbersAmount, double com
 static void waitForChildProcesses(const pid_t *evenProcess, const pid_t *oddProcess);
 
 static void handleChildProcessResponse(int numbersAmount, FILE *fileEven, FILE *fileOdd);
+
+static double roundToDecimals(double input);
 
 char *programmName;
 int precision = 6;
@@ -55,7 +54,10 @@ int main(int argc, char **argv) {
 
     // Just print the number
     if (numbersAmount == 1) {
-        printf("%.*f %.*f*i\n", precision, creal(numbers[0]), precision, cimag(numbers[0]));
+        double real = roundToDecimals(creal(numbers[0]));
+        double imag = roundToDecimals(cimag(numbers[0]));
+        //fprintf(stderr, "converted %f to %f\n", creal(numbers[0]), real);
+        printf("%.*f %.*f*i\n", precision, real, precision, imag);
         free(numbers);
         exit(EXIT_SUCCESS);
     }
@@ -127,7 +129,7 @@ static void handleChildProcessResponse(int numbersAmount, FILE *fileEven, FILE *
     size_t evenLength = 0;
 
     for (int k = 0; k < numbersAmount / 2; k++) {
-        float complex t = (cos((((-2 * PI) / numbersAmount)) * k) + I * sin(((-2 * PI) / numbersAmount) * k));
+        double complex t = (cos((((-2 * PI) / numbersAmount)) * k) + I * sin(((-2 * PI) / numbersAmount) * k));
 
         getline(&evenLine, &evenLength, fileEven);
         double complex even = convertInputToNumber(evenLine);
@@ -142,7 +144,17 @@ static void handleChildProcessResponse(int numbersAmount, FILE *fileEven, FILE *
     free(evenLine);
 
     for (int i = 0; i < numbersAmount; i++) {
-        printf( "%.*f %.*f*i\n", precision, creal(newNumbers[i]), precision, cimag(newNumbers[i]));
+        double real = creal(newNumbers[i]);
+        if (fabs(real) < 0.000001) {
+            real = 0.0;
+        }
+
+        double imag = cimag(newNumbers[i]);
+        if (fabs(imag) < 0.000001) {
+            imag = 0;
+        }
+
+        printf("%.*f %.*f*i\n", precision, real, precision, imag);
     }
 
     free(newNumbers);
@@ -161,9 +173,11 @@ static void waitForChildProcesses(const pid_t *evenProcess, const pid_t *oddProc
         fprintf(stderr, "child failed to terminate: evenProcess\n");
         exit(EXIT_FAILURE);
     }
+
     // Error in child
     if (WIFEXITED(status) != 1) {
-        fprintf(stderr, "Even Child-Prozess %d wurde mit einem unbekannten Status beendet: %d\n", terminatedChildPID, status);
+        fprintf(stderr, "Even Child-Prozess %d wurde mit einem unbekannten Status beendet: %d\n", terminatedChildPID,
+                status);
         exit(EXIT_FAILURE);
     }
 
@@ -175,7 +189,8 @@ static void waitForChildProcesses(const pid_t *evenProcess, const pid_t *oddProc
 
     // Error in child
     if (WIFEXITED(status) != 1) {
-        fprintf(stderr, "Odd Child-Prozess %d wurde mit einem unbekannten Status beendet: %d\n", terminatedChildPID, status);
+        fprintf(stderr, "Odd Child-Prozess %d wurde mit einem unbekannten Status beendet: %d\n", terminatedChildPID,
+                status);
         exit(EXIT_FAILURE);
     }
 }
@@ -190,8 +205,11 @@ static void waitForChildProcesses(const pid_t *evenProcess, const pid_t *oddProc
 static void writeToChildProcesses(int pipes[4][2], int numbersAmount, double complex *numbers) {
     char floatToString[100000];
     for (int i = 0; i < numbersAmount; i++) {
-        snprintf(floatToString, sizeof(floatToString), "%.*f %.*f*i\n", precision, creal(numbers[i]), precision,
-                 cimag(numbers[i]));
+        double real = roundToDecimals(creal(numbers[i]));
+        double imag = roundToDecimals(cimag(numbers[i]));
+
+        snprintf(floatToString, sizeof(floatToString), "%.*f %.*f*i\n", precision, real, precision,
+                 imag);
         write(pipes[i % 2 == 0 ? PIPE_EVEN_WRITE : PIPE_ODD_WRITE][1], floatToString, strlen(floatToString));
     }
 }
@@ -236,7 +254,7 @@ static void createChildProcesses(int pipes[4][2], int *evenProcess, int *oddProc
             fprintf(stderr, "Error in execlp for evenProcess.\n");
             exit(EXIT_FAILURE);
         }
-        return;
+        exit(EXIT_SUCCESS);
     }
 
     *oddProcess = fork();
@@ -251,7 +269,7 @@ static void createChildProcesses(int pipes[4][2], int *evenProcess, int *oddProc
             fprintf(stderr, "Error in execlp for oddProcess.\n");
             exit(EXIT_FAILURE);
         }
-        return;
+        exit(EXIT_SUCCESS);
     }
 }
 
@@ -270,6 +288,10 @@ static int readInput(double complex *numbers[]) {
     while ((getline(&line, &len, stdin)) != -1) {
         (*numbers)[counter] = convertInputToNumber(line);
         counter++;
+
+//        if(counter > 3) {
+//            break;
+//        }
 
         if (counter >= initialNumbersCapacity) {
             initialNumbersCapacity *= 2;
@@ -297,20 +319,20 @@ static int readInput(double complex *numbers[]) {
  */
 static double complex convertInputToNumber(char *input) {
     // Variablen für die Real- und Imaginärteile
-    double real = 0.0;
-    double imag = 0.0;
+    double real;
+    double imag;
 
     // Verarbeiten Sie den Eingabestring
     char *endptrReal;
 
     // Suchen Sie nach dem Realteil
     real = strtod(input, &endptrReal);
-
     if (endptrReal == input) {
-    //if (endptrReal == input || real == 0.0) {
-        fprintf(stderr,"Conversion of real number failed: Line entered: '%s'.\n", input);
+        fprintf(stderr, "Conversion of real number failed: Line entered: '%s'.\n", input);
         exit(EXIT_FAILURE);
     }
+
+    real = roundToDecimals(real);
 
     // Überspringen Sie Leerzeichen und eventuelles Minuszeichen
     while (*endptrReal == ' ') {
@@ -319,15 +341,15 @@ static double complex convertInputToNumber(char *input) {
 
     // there is no further string after empty spaces after number
     if (*endptrReal == '\0' || *endptrReal == '\n') {
-        double complex z = real + 0 * I;
+        double complex z = real;
         return z;
     }
 
     char *endptrImag;
     // check if there is another number - if not just return the real part of the number
     imag = strtod(endptrReal, &endptrImag);
-    if (endptrReal == endptrImag || imag == 0.0) {
-        double complex z = real + 0 * I;
+    if (endptrReal == endptrImag || imag == 0) {
+        double complex z = real;
         return z;
     }
 
@@ -345,6 +367,12 @@ static double complex convertInputToNumber(char *input) {
         exit(EXIT_FAILURE);
     }
 
+    imag = roundToDecimals(imag);
     double complex z = real + imag * I;
     return z;
+}
+
+static double roundToDecimals(double input) {
+    double decimals = pow(10, precision);
+    return round(input * decimals) / decimals;
 }
