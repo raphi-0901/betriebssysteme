@@ -14,9 +14,65 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdbool.h>
-#include <ctype.h>
 
 char* name;
+
+static void processFile(FILE *inputFile, const char *outputFilename, char *keyword, const bool caseSensitive);
+static void usage(void);
+
+/**
+ * Program entry point.
+ * @brief Reads all arguments and processes all specified files one by one.
+ * @details If there is no input files specified, the programm uses stdin as inputFile.
+ * @param argc The argument counter.
+ * @param argv The argument vector.
+ * @return EXIT_SUCCESS or EXIT_FAILURE.
+ */
+int main(int argc, char *argv[]) {
+    name = argv[0];
+    char *outputFilename = NULL;
+    int opt;
+
+    if(argc < 2) {
+        usage();
+    }
+
+    bool caseSensitive = true;
+    while ((opt = getopt(argc, argv, "io:")) != -1) {
+        switch (opt) {
+            case 'i':
+                caseSensitive = false;
+                break;
+            case 'o':
+                outputFilename = optarg;
+                break;
+            default:
+                usage();
+                break;
+        }
+    }
+
+    if (optind >= argc) {
+        usage();
+    }
+
+    char *keyword = argv[optind];
+    optind++;
+    if (optind >= argc) {
+        processFile(stdin, outputFilename, keyword, caseSensitive);
+    } else {
+        for (; optind < argc; optind++) {
+            FILE *inputFile = fopen(argv[optind], "r");
+            if (inputFile == NULL) {
+                fprintf(stderr, "Cannot open input file: %s.\n", argv[optind]);
+                exit(EXIT_FAILURE);
+            }
+            processFile(inputFile, outputFilename, keyword, caseSensitive);
+        }
+    }
+
+    return EXIT_SUCCESS;
+}
 
 /**
  * Process a file.
@@ -28,7 +84,7 @@ char* name;
  * @param caseSensitive CaseSensitive parameter
  * @return EXIT_FAILURE if there is a problem with the output corresponding with the specified outputFilename
  */
-void processFile(FILE *inputFile, const char *outputFilename, char *keyword, const bool caseSensitive) {
+static void processFile(FILE *inputFile, const char *outputFilename, char *keyword, const bool caseSensitive) {
 	FILE *outputFile = stdout;
 	if (outputFilename) {
 		outputFile = fopen(outputFilename, "w");
@@ -68,58 +124,4 @@ void processFile(FILE *inputFile, const char *outputFilename, char *keyword, con
 void usage(void) {
 	fprintf(stderr, "Usage:\t%s [-i] [-o outputfile] [inputfile...]\n", name);
 	exit(EXIT_FAILURE);
-}
-
-/**
- * Program entry point.
- * @brief Reads all arguments and processes all specified files one by one.
- * @details If there is no input files specified, the programm uses stdin as inputFile.
- * @param argc The argument counter.
- * @param argv The argument vector.
- * @return EXIT_SUCCESS or EXIT_FAILURE.
- */
-int main(int argc, char *argv[]) {
-	name = argv[0];
-	char *outputFilename = NULL;
-	int opt;
-
-	if(argc < 2) {
-		usage();
-	}
-
-	bool caseSensitive = true;
-	while ((opt = getopt(argc, argv, "io:")) != -1) {
-		switch (opt) {
-			case 'i':
-				caseSensitive = false;
-				break;
-			case 'o':
-				outputFilename = optarg;
-				break;
-			default:
-				usage();
-				break;
-		}
-	}
-
-	if (optind >= argc) {
-		usage();
-	}
-
-	char *keyword = argv[optind];
-	optind++;
-	if (optind >= argc) {
-		processFile(stdin, outputFilename, keyword, caseSensitive);
-	} else {
-		for (; optind < argc; optind++) {
-			FILE *inputFile = fopen(argv[optind], "r");
-			if (inputFile == NULL) {
-				fprintf(stderr, "Cannot open input file: %s.\n", argv[optind]);
-				exit(EXIT_FAILURE);
-			}
-			processFile(inputFile, outputFilename, keyword, caseSensitive);
-		}
-	}
-
-	return EXIT_SUCCESS;
 }
