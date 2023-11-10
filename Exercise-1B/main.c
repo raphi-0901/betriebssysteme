@@ -1,3 +1,12 @@
+/**
+ * @file main.c
+ * @author Raphael Wirnsberger <e12220836@student.tuwien.ac.at>
+ * @date 10.11.2023
+ *
+ * @brief Source file of forkFFT programm.
+ *
+ **/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -11,8 +20,6 @@
 #define PIPE_EVEN_READ 1
 #define PIPE_ODD_WRITE 2
 #define PIPE_ODD_READ 3
-
-int initialNumbersCapacity = 1;
 
 static double complex convertInputToNumber(char *input);
 
@@ -30,6 +37,7 @@ static double roundToDecimals(double input);
 
 char *programmName;
 int precision = 6;
+int initialNumbersCapacity = 4;
 
 /**
  * Program entry point.
@@ -112,6 +120,7 @@ int main(int argc, char **argv) {
 
 /**
  * Performs butterfly calculation.
+ * @brief Prints output line by line to stdout
  * @param numbersAmount Amount of numbers in input
  * @param fileEven FILE-stream of even pipe
  * @param fileOdd FILE-stream of odd pipe
@@ -145,7 +154,7 @@ static void handleChildProcessResponse(int numbersAmount, FILE *fileEven, FILE *
     for (int i = 0; i < numbersAmount; i++) {
         double real = creal(newNumbers[i]);
         if (fabs(real) < 0.000001) {
-            real = 0.0;
+            real = 0;
         }
 
         double imag = cimag(newNumbers[i]);
@@ -160,7 +169,7 @@ static void handleChildProcessResponse(int numbersAmount, FILE *fileEven, FILE *
 }
 
 /**
- * Waits for children to finish their process.
+ * Waits for children to finish their processes.
  * @param evenProcess ProcessID of evenProcess child
  * @param oddProcess ProcessID of oddProcess child
  * @return EXIT_FAILURE if child termination was not successful.
@@ -202,14 +211,21 @@ static void waitForChildProcesses(const pid_t *evenProcess, const pid_t *oddProc
  * @param numbers Pointer to numbers
  */
 static void writeToChildProcesses(int pipes[4][2], int numbersAmount, double complex *numbers) {
-    char floatToString[100000];
     for (int i = 0; i < numbersAmount; i++) {
         double real = roundToDecimals(creal(numbers[i]));
         double imag = roundToDecimals(cimag(numbers[i]));
 
-        snprintf(floatToString, sizeof(floatToString), "%.*f %.*f*i\n", precision, real, precision,
-                 imag);
-        write(pipes[i % 2 == 0 ? PIPE_EVEN_WRITE : PIPE_ODD_WRITE][1], floatToString, strlen(floatToString));
+        int bufferSize = snprintf(NULL, 0, "%.*f %.*f*i\n", precision, real, precision, imag) + 1;
+        char *floatToString = (char *) malloc(bufferSize);
+
+        if (floatToString == NULL) {
+            fprintf(stderr, "Allocating memory failed\n");
+            exit(EXIT_FAILURE);
+        }
+
+        snprintf(floatToString, bufferSize, "%.*f %.*f*i\n", precision, real, precision, imag);
+        write(pipes[i % 2 == 0 ? PIPE_EVEN_WRITE : PIPE_ODD_WRITE][1], floatToString, bufferSize - 1);
+        free(floatToString);
     }
 }
 
@@ -227,12 +243,13 @@ static void createChildProcesses(int pipes[4][2], int *evenProcess, int *oddProc
     }
 
     if (*evenProcess == 0) {
-        if(dup2(pipes[PIPE_EVEN_READ][1], STDOUT_FILENO) == -1 || dup2(pipes[PIPE_EVEN_WRITE][0], STDIN_FILENO) == -1) {
+        if (dup2(pipes[PIPE_EVEN_READ][1], STDOUT_FILENO) == -1 ||
+            dup2(pipes[PIPE_EVEN_WRITE][0], STDIN_FILENO) == -1) {
             fprintf(stderr, "failure in creating even dup2");
             exit(EXIT_FAILURE);
         }
 
-        for(int i = 0; i < 4; i++) {
+        for (int i = 0; i < 4; i++) {
             close(pipes[i][0]);
             close(pipes[i][1]);
         }
@@ -251,12 +268,12 @@ static void createChildProcesses(int pipes[4][2], int *evenProcess, int *oddProc
     }
 
     if (*oddProcess == 0) {
-        if(dup2(pipes[PIPE_ODD_READ][1], STDOUT_FILENO) == -1 || dup2(pipes[PIPE_ODD_WRITE][0], STDIN_FILENO) == -1) {
+        if (dup2(pipes[PIPE_ODD_READ][1], STDOUT_FILENO) == -1 || dup2(pipes[PIPE_ODD_WRITE][0], STDIN_FILENO) == -1) {
             fprintf(stderr, "failure in creating odd dup2");
             exit(EXIT_FAILURE);
         }
 
-        for(int i = 0; i < 4; i++) {
+        for (int i = 0; i < 4; i++) {
             close(pipes[i][0]);
             close(pipes[i][1]);
         }
@@ -310,14 +327,12 @@ static int readInput(double complex *numbers[]) {
  * @return converted complex number. If input does not allow to convert, EXIT_FAILURE gets returned
  */
 static double complex convertInputToNumber(char *input) {
-    // Variablen für die Real- und Imaginärteile
     double real;
     double imag;
 
-    // Verarbeiten Sie den Eingabestring
     char *endptrReal;
 
-    // Suchen Sie nach dem Realteil
+    // search for real number
     real = strtod(input, &endptrReal);
     if (endptrReal == input) {
         fprintf(stderr, "Conversion of real number failed: Line entered: '%s'.\n", input);
@@ -326,7 +341,7 @@ static double complex convertInputToNumber(char *input) {
 
     real = roundToDecimals(real);
 
-    // Überspringen Sie Leerzeichen und eventuelles Minuszeichen
+    // skip spaces after number
     while (*endptrReal == ' ') {
         endptrReal++;
     }
@@ -337,8 +352,8 @@ static double complex convertInputToNumber(char *input) {
         return z;
     }
 
-    // next non-empty char is not a number -->
-    if(!(*endptrReal >= '0' && *endptrReal <= '9') && *endptrReal != '-') {
+    // next non-empty char is not the beginning of a number -->
+    if (!(*endptrReal >= '0' && *endptrReal <= '9') && *endptrReal != '-') {
         fprintf(stderr, "Received false imaginary part.\n");
         exit(EXIT_FAILURE);
     }
@@ -359,7 +374,7 @@ static double complex convertInputToNumber(char *input) {
 
     endptrImag += 2;
 
-    // there are further chars after *i
+    // check if there are further chars after *i
     if (*endptrImag != '\0' && *endptrImag != '\n') {
         fprintf(stderr, "Conversion of imaginary number failed - no newline after *i\n");
         exit(EXIT_FAILURE);
@@ -370,6 +385,12 @@ static double complex convertInputToNumber(char *input) {
     return z;
 }
 
+/**
+ * Rounds the input to n decimals places.
+ * @details Uses the global precision variable to determine the decimal places.
+ * @param input Input to convert
+ * @return rounded number to n-precision decimal places.
+ */
 static double roundToDecimals(double input) {
     double decimals = pow(10, precision);
     return round(input * decimals) / decimals;
