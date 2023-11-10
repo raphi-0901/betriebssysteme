@@ -213,27 +213,6 @@ static void writeToChildProcesses(int pipes[4][2], int numbersAmount, double com
     }
 }
 
-static void dupNeededPipes(int pipeAmount, int pipes[pipeAmount][2], int neededReadPipe, int neededWritePipe) {
-    for (int i = 0; i < pipeAmount; i++) {
-        if (i == neededReadPipe) {
-            if (dup2(pipes[i][1], STDOUT_FILENO) == -1) {
-                fprintf(stderr, "failure in creating dup2");
-                exit(EXIT_FAILURE);
-            }
-        }
-
-        if (i == neededWritePipe) {
-            if (dup2(pipes[i][0], STDIN_FILENO) == -1) {
-                fprintf(stderr, "failure in creating dup2");
-                exit(EXIT_FAILURE);
-            }
-        }
-
-        close(pipes[i][1]);
-        close(pipes[i][0]);
-    }
-}
-
 /**
  * Creates child processes.
  * @brief Creates two child processes and redirected the stdin and stdout of the processes to the pipes..
@@ -248,7 +227,16 @@ static void createChildProcesses(int pipes[4][2], int *evenProcess, int *oddProc
     }
 
     if (*evenProcess == 0) {
-        dupNeededPipes(4, pipes, PIPE_EVEN_READ, PIPE_EVEN_WRITE);
+        if(dup2(pipes[PIPE_EVEN_READ][1], STDOUT_FILENO) == -1 || dup2(pipes[PIPE_EVEN_WRITE][0], STDIN_FILENO) == -1) {
+            fprintf(stderr, "failure in creating even dup2");
+            exit(EXIT_FAILURE);
+        }
+
+        for(int i = 0; i < 4; i++) {
+            close(pipes[i][0]);
+            close(pipes[i][1]);
+        }
+
         if (execlp(programmName, programmName, NULL) == -1) {
             fprintf(stderr, "Error in execlp for evenProcess.\n");
             exit(EXIT_FAILURE);
@@ -263,7 +251,16 @@ static void createChildProcesses(int pipes[4][2], int *evenProcess, int *oddProc
     }
 
     if (*oddProcess == 0) {
-        dupNeededPipes(4, pipes, PIPE_ODD_READ, PIPE_ODD_WRITE);
+        if(dup2(pipes[PIPE_ODD_READ][1], STDOUT_FILENO) == -1 || dup2(pipes[PIPE_ODD_WRITE][0], STDIN_FILENO) == -1) {
+            fprintf(stderr, "failure in creating odd dup2");
+            exit(EXIT_FAILURE);
+        }
+
+        for(int i = 0; i < 4; i++) {
+            close(pipes[i][0]);
+            close(pipes[i][1]);
+        }
+
         if (execlp(programmName, programmName, NULL) == -1) {
             fprintf(stderr, "Error in execlp for oddProcess.\n");
             exit(EXIT_FAILURE);
