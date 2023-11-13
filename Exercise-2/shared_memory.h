@@ -6,7 +6,7 @@
 #define BETRIEBSSYSTEME_SHARED_MEMORY_H
 
 #define SHM_NAME "/myshm"
-#define MAX_DATA (50)
+#define MAX_DATA (500)
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -14,7 +14,7 @@
 #include <unistd.h>
 
 struct myshm {
-    unsigned int results[100];
+    unsigned int results[MAX_DATA];
 };
 
 static void openOrCreateSharedMemory(struct myshm **myshm) {

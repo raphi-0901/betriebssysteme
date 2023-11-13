@@ -15,8 +15,13 @@
 #include <stdlib.h>
 #include <limits.h>
 #include "shared_memory.h"
-
+#include <semaphore.h>
+#include <fcntl.h> /* For O_* constants */
 static void usage(char *name);
+
+#define SEM_READ "/sem_read"
+#define SEM_WRITE "/sem_write"
+#define SEM_MUTEX "/sem_mutex"
 
 int delay = 0;
 int limit = -1;
@@ -26,7 +31,10 @@ int main(int argc, char **argv) {
     struct myshm *myshm;
     openOrCreateSharedMemory(&myshm);
 
-    printf("%d", myshm->results[0]);
+    sem_t *semRead = sem_open(SEM_READ, O_CREAT | O_EXCL, 0600, 0);
+    sem_t *semWrite = sem_open(SEM_WRITE, O_CREAT | O_EXCL, 0600, MAX_DATA);
+    sem_t *semMutex = sem_open(SEM_MUTEX, O_CREAT | O_EXCL, 0600, 1);
+
     int opt;
     while ((opt = getopt(argc, argv, "n:w:")) != -1) {
         switch (opt) {
@@ -46,17 +54,27 @@ int main(int argc, char **argv) {
     sleep(delay);
     printf("Wartezeit abgeschlossen!\n");
 
-    int bestResult = INT_MAX;
-    for (int i = 0; i < limit; i++) {
-        // if(bestResult > result) {
-        //     bestResult = result;
-        // }
-        // read from buffer
-        // if(result == 0) {
-        //     fprintf(stdout, "The graph is 3-colorable!");
-        // // make sure to clean shared memory and semaphores
-        //     exit(EXIT_SUCCESS);
-        // }
+    unsigned int bestResult = INT_MAX;
+    int readPos = 0;
+    for (int i = 0; i < limit || limit == -1; i++) {
+        sem_wait(semRead);
+        unsigned int *result = &myshm->results[readPos];
+        if(*result < bestResult) {
+            bestResult = *result;
+
+            if(bestResult == 0) {
+                fprintf(stdout, "The graph is 3-colorable!\n");
+                // make sure to clean shared memory and semaphores
+                exit(EXIT_SUCCESS);
+            } else {
+                fprintf(stderr, "The graph is 3-colorable by removing %d edges\n", bestResult);
+            }
+        }
+
+
+
+        readPos = (readPos + 1) % MAX_DATA;
+        sem_post(semWrite);
     }
 
     fprintf(stdout, "The graph might not be 3-colorable, best solution removes %d edges\n", bestResult);
@@ -67,7 +85,13 @@ int main(int argc, char **argv) {
         printf("line: %s", line);
     }
 
-    closeSharedMemory(&myshm);
+    closeSharedMemory(myshm);
+    sem_close(semRead);
+    sem_close(semWrite);
+    sem_close(semMutex);
+    sem_unlink(SEM_READ);
+    sem_unlink(SEM_WRITE);
+    sem_unlink(SEM_MUTEX);
 }
 
 /**

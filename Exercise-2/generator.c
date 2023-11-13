@@ -13,8 +13,10 @@
 #include <regex.h>
 #include <string.h>
 #include <time.h>
+#include <semaphore.h>
 
 static void usage();
+
 char *name;
 
 enum Color {
@@ -38,12 +40,18 @@ static char *colorToString(enum Color color);
 
 static struct Edge convertInputToEdge(char *input);
 
+#define SEM_READ "/sem_read"
+#define SEM_WRITE "/sem_write"
+#define SEM_MUTEX "/sem_mutex"
+
 int main(int argc, char **argv) {
     name = argv[0];
     struct myshm *myshm;
     openOrCreateSharedMemory(&myshm);
+    sem_t *semRead = sem_open(SEM_READ, 0);
+    sem_t *semWrite = sem_open(SEM_WRITE, 0);
+    //sem_t *semMutex = sem_open(SEM_MUTEX, O_CREAT | O_EXCL);
 
-    myshm->results[0] = 200;
     int edgeCount = argc - 1;
     struct Edge *edges = (struct Edge *) malloc(edgeCount * sizeof(struct Edge));
 
@@ -54,29 +62,41 @@ int main(int argc, char **argv) {
     // Initialisieren des Zufallszahlengenerators mit der aktuellen Zeit
     srand(time(NULL));
 
-    // assign random color to vertices
-    for (int i = 0; i < edgeCount; i++) {
-        int randomColor1 = rand() % 3;
-        int randomColor2 = rand() % 3;
-        edges[i].vertex1.color = randomColor1;
-        edges[i].vertex2.color = randomColor2;
+    int writePos = 0;
+    while (1) {
+        // assign random color to vertices
+        for (int i = 0; i < edgeCount; i++) {
+            int randomColor1 = rand() % 3;
+            int randomColor2 = rand() % 3;
+            edges[i].vertex1.color = randomColor1;
+            edges[i].vertex2.color = randomColor2;
 
-        printf("%d - %d\t%s - %s\n", edges[i].vertex1.id, edges[i].vertex2.id, colorToString(edges[i].vertex1.color),
-               colorToString(edges[i].vertex2.color));
+//            printf("%d - %d\t%s - %s\n", edges[i].vertex1.id, edges[i].vertex2.id, colorToString(edges[i].vertex1.color),
+//                   colorToString(edges[i].vertex2.color));
 
-    }
+        }
 
-    int cancelledEdges = 0;
-    for (int i = 0; i < edgeCount; i++) {
-        struct Edge edge = edges[i];
-        if(edge.vertex1.color == edge.vertex2.color) {
-            cancelledEdges++;
+        int cancelledEdges = 0;
+        for (int i = 0; i < edgeCount; i++) {
+            struct Edge edge = edges[i];
+            if (edge.vertex1.color == edge.vertex2.color) {
+                cancelledEdges++;
+            }
+        }
+        //fprintf(stdout, "3 colorable with removing %d edges\n", cancelledEdges);
+
+        sem_wait(semWrite);
+        myshm->results[writePos] = cancelledEdges;
+        writePos = (writePos + 1) % MAX_DATA;
+        sem_post(semRead);
+
+        if(cancelledEdges == 0) {
+            break;
         }
     }
 
-    fprintf(stdout, "3 colorable with removing %d edges\n", cancelledEdges);
     // write to sharedMemory
-    closeSharedMemory(&myshm);
+    closeSharedMemory(myshm);
 }
 
 static char *colorToString(enum Color color) {
