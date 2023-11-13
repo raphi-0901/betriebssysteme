@@ -3,31 +3,19 @@
  * @author Raphael Wirnsberger <e12220836@student.tuwien.ac.at>
  * @date 11.12.2023
  *
- * @brief Source file of supervisor programm of 3-coloring.
+ * @brief Source file of generator programm of 3-coloring.
  *
  **/
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <signal.h>
 #include "shared_memory.h"
 #include <regex.h>
 #include <string.h>
 #include <time.h>
 
-#define SHM_NAME "/myshm"
-#define MAX_DATA (50)
-
-static void usage(char *name);
-
-static void handle_signal(int signal);
-
-volatile sig_atomic_t quit = 0;
-
-int delay = 0;
-int limit = -1;
+static void usage();
 char *name;
-
 
 enum Color {
     UNASSIGNED = -1,
@@ -51,7 +39,11 @@ static char *colorToString(enum Color color);
 static struct Edge convertInputToEdge(char *input);
 
 int main(int argc, char **argv) {
-    // Durchlaufen Sie die Argumente und verarbeiten Sie sie
+    name = argv[0];
+    struct myshm *myshm;
+    openOrCreateSharedMemory(&myshm);
+
+    myshm->results[0] = 200;
     int edgeCount = argc - 1;
     struct Edge *edges = (struct Edge *) malloc(edgeCount * sizeof(struct Edge));
 
@@ -82,8 +74,9 @@ int main(int argc, char **argv) {
         }
     }
 
-    fprintf(stdout, "3 colorable with removing %d edges", cancelledEdges);
+    fprintf(stdout, "3 colorable with removing %d edges\n", cancelledEdges);
     // write to sharedMemory
+    closeSharedMemory(&myshm);
 }
 
 static char *colorToString(enum Color color) {
@@ -97,6 +90,9 @@ static char *colorToString(enum Color color) {
             break;
         case BLUE:
             colorName = "BLUE";
+            break;
+        default:
+            colorName = "UNASSIGNED";
             break;
     }
     return colorName;
@@ -143,9 +139,8 @@ static struct Edge convertInputToEdge(char *input) {
  * @brief Prints a usage info for the program and exits with EXIT_FAILURE
  * @return exits the programm with EXIT_FAILURE
  */
-void usage(char *name) {
-    fprintf(stderr, "Usage:\t%s [-n limit] [-w delay]\n", name);
+void usage() {
+    fprintf(stderr, "Usage:\t%s EDGE1\n", name);
+    fprintf(stderr, "EXAMPLE:\t%s 0-1 0-2 0-3 1-2 1-3 2-3\n", name);
     exit(EXIT_FAILURE);
 }
-
-static void handle_signal(int signal) { quit = 1; }

@@ -18,23 +18,15 @@
 
 static void usage(char *name);
 
-static void handle_signal(int signal);
-
-volatile sig_atomic_t quit = 0;
-
 int delay = 0;
 int limit = -1;
 char *name;
 
 int main(int argc, char **argv) {
-    struct sigaction sa =
-            {
-                    .sa_hander = handle_signal
-            };
-    sigaction(SIGINT, &sa, NULL);
-    struct myshm myshm;
+    struct myshm *myshm;
     openOrCreateSharedMemory(&myshm);
 
+    printf("%d", myshm->results[0]);
     int opt;
     while ((opt = getopt(argc, argv, "n:w:")) != -1) {
         switch (opt) {
@@ -54,16 +46,6 @@ int main(int argc, char **argv) {
     sleep(delay);
     printf("Wartezeit abgeschlossen!\n");
 
-    while (!quit) {
-        if (sem_wait(sem) == -1) {
-            if (errno == EINTR) // interrupted by signal?
-            {
-                continue;
-            }
-            exit(EXIT_FAILURE); // other error
-        }
-    }
-
     int bestResult = INT_MAX;
     for (int i = 0; i < limit; i++) {
         // if(bestResult > result) {
@@ -77,7 +59,7 @@ int main(int argc, char **argv) {
         // }
     }
 
-    fprintf(stdout, "The graph might not be 3-colorable, best solution removes %d edges", bestResult);
+    fprintf(stdout, "The graph might not be 3-colorable, best solution removes %d edges\n", bestResult);
 
     size_t len = 0;
     char *line = NULL;
@@ -97,5 +79,3 @@ void usage(char *name) {
     fprintf(stderr, "Usage:\t%s [-n limit] [-w delay]\n", name);
     exit(EXIT_FAILURE);
 }
-
-static void handle_signal(int signal) { quit = 1; }
