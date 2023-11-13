@@ -13,6 +13,7 @@
 #include "shared_memory.h"
 #include <regex.h>
 #include <string.h>
+#include <time.h>
 
 #define SHM_NAME "/myshm"
 #define MAX_DATA (50)
@@ -28,9 +29,16 @@ int limit = -1;
 char *name;
 
 
+enum Color {
+    UNASSIGNED = -1,
+    RED = 0,
+    GREEN = 1,
+    BLUE = 2,
+};
+
 struct Vertex {
     int id;
-    int color;
+    enum Color color;
 };
 
 struct Edge {
@@ -38,31 +46,60 @@ struct Edge {
     struct Vertex vertex2;
 };
 
+static char *colorToString(enum Color color);
+
 static struct Edge convertInputToEdge(char *input);
 
 int main(int argc, char **argv) {
     // Durchlaufen Sie die Argumente und verarbeiten Sie sie
-    struct Edge *edges = (struct Edge *) malloc((argc - 1) * sizeof(struct Edge));
+    int edgeCount = argc - 1;
+    struct Edge *edges = (struct Edge *) malloc(edgeCount * sizeof(struct Edge));
 
-    char *token = strtok("0-1", "-");
-
-    while (token != NULL) {
-        // token enthält das aufgeteilte Teil des Strings
-        printf("Token: %s\n", token);
-
-        // Rufen Sie strtok erneut auf, um das nächste Token zu erhalten
-        token = strtok(NULL, "-");
+    for (int i = 0; i < edgeCount; i++) {
+        edges[i] = convertInputToEdge(argv[i + 1]);
     }
 
-    for (int i = 1; i < argc; i++) {
-        edges[i] = convertInputToEdge(argv[i]);
-        // Jetzt können Sie das Argument weiter analysieren und verwenden
+    // Initialisieren des Zufallszahlengenerators mit der aktuellen Zeit
+    srand(time(NULL));
+
+    // assign random color to vertices
+    for (int i = 0; i < edgeCount; i++) {
+        int randomColor1 = rand() % 3;
+        int randomColor2 = rand() % 3;
+        edges[i].vertex1.color = randomColor1;
+        edges[i].vertex2.color = randomColor2;
+
+        printf("%d - %d\t%s - %s\n", edges[i].vertex1.id, edges[i].vertex2.id, colorToString(edges[i].vertex1.color),
+               colorToString(edges[i].vertex2.color));
+
     }
 
-
-    for (int i = 0; i < argc - 1; i++) {
-        printf("edge: %d - %d\n", edges[i].vertex1.id, edges[i].vertex2.id);
+    int cancelledEdges = 0;
+    for (int i = 0; i < edgeCount; i++) {
+        struct Edge edge = edges[i];
+        if(edge.vertex1.color == edge.vertex2.color) {
+            cancelledEdges++;
+        }
     }
+
+    fprintf(stdout, "3 colorable with removing %d edges", cancelledEdges);
+    // write to sharedMemory
+}
+
+static char *colorToString(enum Color color) {
+    char *colorName = "";
+    switch (color) {
+        case RED:
+            colorName = "RED";
+            break;
+        case GREEN:
+            colorName = "GREEN";
+            break;
+        case BLUE:
+            colorName = "BLUE";
+            break;
+    }
+    return colorName;
 }
 
 static struct Edge convertInputToEdge(char *input) {
@@ -91,9 +128,9 @@ static struct Edge convertInputToEdge(char *input) {
     struct Vertex vertex1;
     struct Vertex vertex2;
     vertex1.id = strtol(strtok(input, "-"), NULL, 10);
-    vertex1.color = -1;
+    vertex1.color = UNASSIGNED;
     vertex2.id = strtol(strtok(NULL, "-"), NULL, 10);
-    vertex2.color = -1;
+    vertex2.color = UNASSIGNED;
     struct Edge edge;
     edge.vertex1 = vertex1;
     edge.vertex2 = vertex2;
