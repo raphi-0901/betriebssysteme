@@ -17,7 +17,7 @@
 #include "shared_memory.h"
 #include <semaphore.h>
 #include <fcntl.h> /* For O_* constants */
-static void usage(char *name);
+static void usage();
 
 #define SEM_READ "/sem_read"
 #define SEM_WRITE "/sem_write"
@@ -25,9 +25,11 @@ static void usage(char *name);
 
 int delay = 0;
 int limit = -1;
-char *name;
+char *programName;
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
+    programName = argv[0];
     struct myshm *myshm;
     openOrCreateSharedMemory(&myshm);
 
@@ -36,17 +38,32 @@ int main(int argc, char **argv) {
     sem_t *semMutex = sem_open(SEM_MUTEX, O_CREAT | O_EXCL, 0600, 1);
 
     int opt;
-    while ((opt = getopt(argc, argv, "n:w:")) != -1) {
-        switch (opt) {
-            case 'n':
-                limit = strtol(optarg, NULL, 10);
-                break;
-            case 'w':
-                delay = strtol(optarg, NULL, 10);
-                break;
-            default:
-                usage(argv[0]);
-                break;
+    int delayAlreadySet = 0;
+    while ((opt = getopt(argc, argv, "n:w:")) != -1)
+    {
+        switch (opt)
+        {
+        case 'n':
+            // called more than once
+            if (limit != -1)
+            {
+                usage();
+            }
+
+            limit = strtol(optarg, NULL, 10);
+            break;
+        case 'w':
+            if (delayAlreadySet != 0)
+            {
+                usage();
+            }
+
+            delay = strtol(optarg, NULL, 10);
+
+            break;
+        default:
+            usage(argv[0]);
+            break;
         }
     }
 
@@ -54,24 +71,27 @@ int main(int argc, char **argv) {
     sleep(delay);
     printf("Wartezeit abgeschlossen!\n");
 
-    unsigned int bestResult = INT_MAX;
+    int bestResult = INT_MAX;
     int readPos = 0;
-    for (int i = 0; i < limit || limit == -1; i++) {
+    for (int i = 0; i < limit || limit == -1; i++)
+    {
         sem_wait(semRead);
-        unsigned int *result = &myshm->results[readPos];
-        if(*result < bestResult) {
-            bestResult = *result;
-
-            if(bestResult == 0) {
+        struct EdgeDTO *cancelledEdges = &myshm->results[readPos];
+        if (cancelledEdges->edgeCount < bestResult)
+        {
+            bestResult = cancelledEdges->edgeCount;
+            if (bestResult == 0)
+            {
                 fprintf(stdout, "The graph is 3-colorable!\n");
                 // make sure to clean shared memory and semaphores
                 exit(EXIT_SUCCESS);
-            } else {
+            }
+            else
+            {
+                // todo print all edges in cancelledEdges result
                 fprintf(stderr, "The graph is 3-colorable by removing %d edges\n", bestResult);
             }
         }
-
-
 
         readPos = (readPos + 1) % MAX_DATA;
         sem_post(semWrite);
@@ -81,7 +101,8 @@ int main(int argc, char **argv) {
 
     size_t len = 0;
     char *line = NULL;
-    while (getline(&line, &len, stdin) != -1) {
+    while (getline(&line, &len, stdin) != -1)
+    {
         printf("line: %s", line);
     }
 
@@ -99,7 +120,8 @@ int main(int argc, char **argv) {
  * @brief Prints a usage info for the program and exits with EXIT_FAILURE
  * @return exits the programm with EXIT_FAILURE
  */
-void usage(char *name) {
-    fprintf(stderr, "Usage:\t%s [-n limit] [-w delay]\n", name);
+void usage()
+{
+    fprintf(stderr, "Usage:\t%s [-n limit] [-w delay]\n", programName);
     exit(EXIT_FAILURE);
 }
