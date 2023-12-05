@@ -19,6 +19,7 @@
 #include <semaphore.h>
 #include <string.h>
 #include <signal.h>
+#include <errno.h>
 #include <fcntl.h> /* For O_* constants */
 static void usage();
 
@@ -92,34 +93,42 @@ int main(int argc, char **argv)
     sleep(delay);
     printf("Wartezeit abgeschlossen!\n");
 
-    Shm_t *myshm;
-    int status = openOrCreateSharedMemory(&myshm);
-
-    if (status == -1)
+    int fd = shm_open(SHM_NAME, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
+    if (fd == -1)
     {
-        fprintf(stderr, "creation of shm failed");
-        return 2;
+        fprintf(stderr, "initialisation of semaphore failed\n");
+        return 1;
+    }
+    if (ftruncate(fd, sizeof(Shm_t)) == -1)
+    {
+        fprintf(stderr, "initialisation of semaphore failed\n");
+        return 1;
+    }
+    Shm_t *myshm =
+        mmap(NULL, sizeof(*myshm), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (myshm == MAP_FAILED)
+    {
+        fprintf(stderr, "initialisation of semaphore failed\n");
+        return 1;
     }
 
     // set values of shm
     myshm->writeIndex = 0;
     myshm->readIndex = 0;
     myshm->terminateGenerators = false;
-    printf("Alive1!\n");
-    printf("Alive2!\n");
     if (sem_init(&myshm->writeMutex, true, 1) == -1)
     {
-        fprintf(stderr, "initialisation of semaphore failed");
+        fprintf(stderr, "initialisation of semaphore failed\n");
         return 1;
     }
     if (sem_init(&myshm->numUsed, true, 0) == -1)
     {
-        fprintf(stderr, "initialisation of semaphore failed");
+        fprintf(stderr, "initialisation of semaphore failed\n");
         return 1;
     }
     if (sem_init(&myshm->numFree, true, MAX_DATA) == -1)
     {
-        fprintf(stderr, "initialisation of semaphore failed");
+        fprintf(stderr, "initialisation of semaphore failed\n");
         return 1;
     }
 
@@ -128,7 +137,12 @@ int main(int argc, char **argv)
     {
         if (sem_wait(&myshm->numUsed) == -1)
         {
-            fprintf(stderr, "Failure in semaphore wait");
+            if (errno == EINTR)
+            {
+                fprintf(stderr, "Quit waiting\n");
+                break;
+            }
+            fprintf(stderr, "Failure in semaphore wait\n");
             exit(EXIT_FAILURE);
         }
 
@@ -158,7 +172,7 @@ int main(int argc, char **argv)
         myshm->readIndex = (myshm->readIndex + 1) % MAX_DATA;
         if (sem_post(&myshm->numFree) == -1)
         {
-            fprintf(stderr, "Failure in semaphore wait");
+            fprintf(stderr, "Failure in semaphore wait\n");
             exit(EXIT_FAILURE);
         }
     }
