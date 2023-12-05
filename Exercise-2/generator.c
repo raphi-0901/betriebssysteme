@@ -47,14 +47,19 @@ int main(int argc, char **argv)
     // Initialisieren des Zufallszahlengenerators mit der aktuellen Zeit
     srand(time(NULL));
 
-    struct Shm_t *myshm;
-    int status = openOrCreateSharedMemory(&myshm);
-
-    if (status == -1)
-    {
-        fprintf(stderr, "creation of shm failed");
-        return 1;
+    int fd = shm_open(SHM_NAME, O_RDWR, 0);
+    if (fd == -1) {
+        fprintf(stderr, "Failure in semaphore wait\n");
+        exit(EXIT_FAILURE);
     }
+    Shm_t* myshm =
+            mmap(NULL, sizeof(*myshm), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (myshm == MAP_FAILED) {
+        fprintf(stderr, "Failure in semaphore wait\n");
+        exit(EXIT_FAILURE);
+    }
+
+    close(fd);
 
     int writePos = 0;
 
@@ -90,7 +95,7 @@ int main(int argc, char **argv)
         // wait for empty space on buffer
         if ((sem_wait(&myshm->numFree) == -1) && (errno != EINTR))
         {
-            fprintf(stderr, "Failure in semaphore wait");
+            fprintf(stderr, "Failure in semaphore wait\n");
             exit(EXIT_FAILURE);
         }
 
@@ -103,7 +108,7 @@ int main(int argc, char **argv)
         // wait for exclusive write access on buffer
         if ((sem_wait(&myshm->writeMutex) == -1) && (errno != EINTR))
         {
-            fprintf(stderr, "Failure in semaphore wait");
+            fprintf(stderr, "Failure in semaphore wait\n");
             exit(EXIT_FAILURE);
         }
 
@@ -114,14 +119,14 @@ int main(int argc, char **argv)
         // free exclusive access
         if (sem_post(&myshm->writeMutex) == -1)
         {
-            fprintf(stderr, "Failure in semaphore post");
+            fprintf(stderr, "Failure in semaphore post\n");
             exit(EXIT_FAILURE);
         }
 
         // increase used space on buffer
         if (sem_post(&myshm->numUsed) == -1)
         {
-            fprintf(stderr, "Failure in semaphore post");
+            fprintf(stderr, "Failure in semaphore post\n");
             exit(EXIT_FAILURE);
         }
 

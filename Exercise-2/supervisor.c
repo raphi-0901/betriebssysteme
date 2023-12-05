@@ -19,7 +19,7 @@
 #include <semaphore.h>
 #include <string.h>
 #include <signal.h>
-#include <errno.h>
+    #include <errno.h>
 #include <fcntl.h> /* For O_* constants */
 static void usage();
 
@@ -41,15 +41,15 @@ static void initSignalHandler(void)
     sa.sa_sigaction = onSignal;
     if (sigaction(SIGINT, &sa, NULL) == -1)
     {
-        fprintf(stderr, "sigaction");
+        fprintf(stderr, "sigaction\n");
     }
     if (sigaction(SIGTERM, &sa, NULL) == -1)
     {
-        fprintf(stderr, "sigaction");
+        fprintf(stderr, "sigaction\n");
     }
     if (sigaction(SIGQUIT, &sa, NULL) == -1)
     {
-        fprintf(stderr, "sigaction");
+        fprintf(stderr, "sigaction\n");
     }
 }
 
