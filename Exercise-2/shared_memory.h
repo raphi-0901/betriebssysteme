@@ -5,8 +5,7 @@
 #ifndef BETRIEBSSYSTEME_SHARED_MEMORY_H
 #define BETRIEBSSYSTEME_SHARED_MEMORY_H
 
-#define SHM_NAME "/myshm"
-#define MAX_DATA (500)
+#define SHM_NAME "/12220836shm"
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -14,18 +13,7 @@
 #include <unistd.h>
 #include "structs.h"
 
-struct EdgeDTO
-{
-    struct Edge *results;
-    int edgeCount;
-};
-
-struct myshm
-{
-    struct EdgeDTO results[MAX_DATA];
-};
-
-static void openOrCreateSharedMemory(struct myshm **myshm)
+static int openOrCreateSharedMemory(Shm_t **myshm)
 {
     // create and/or open the shared memory object:
     int shmfd = shm_open(SHM_NAME, O_RDWR | O_CREAT, 0600);
@@ -36,14 +24,15 @@ static void openOrCreateSharedMemory(struct myshm **myshm)
         if (shmfd == -1)
         {
             fprintf(stderr, "error while opening shared memory\n");
-            return;
+            return -1;
         }
     }
 
     // set the size of the shared memory:
-    if (ftruncate(shmfd, sizeof(struct myshm)) < 0)
+    if (ftruncate(shmfd, sizeof(*myshm)) < 0)
     {
         fprintf(stderr, "error in ftruncate\n");
+        return -1;
     }
 
     // map shared memory object:
@@ -52,16 +41,20 @@ static void openOrCreateSharedMemory(struct myshm **myshm)
     if (myshm == MAP_FAILED)
     {
         fprintf(stderr, "error in mmap\n");
+        return -1;
     }
 
     // close file descriptor
     if (close(shmfd) == -1)
     {
         fprintf(stderr, "error while closing shared memory\n");
+        return -1;
     }
+
+    return 0;
 }
 
-static void closeSharedMemory(struct myshm *myshm)
+static void closeSharedMemory(Shm_t *myshm)
 {
     // unmap shared memory:
     if (munmap(myshm, sizeof(*myshm)) == -1)

@@ -14,6 +14,7 @@
 #include <string.h>
 #include <time.h>
 #include <semaphore.h>
+#include <errno.h>
 
 static void usage();
 
@@ -30,21 +31,14 @@ static struct Edge convertInputToEdge(char *input);
 int main(int argc, char **argv)
 {
     name = argv[0];
-    struct myshm *myshm;
-    openOrCreateSharedMemory(&myshm);
-    sem_t *semRead = sem_open(SEM_READ, 0);
-    sem_t *semWrite = sem_open(SEM_WRITE, 0);
-    // sem_t *semMutex = sem_open(SEM_MUTEX, O_CREAT | O_EXCL);
 
     int edgeCount = argc - 1;
-
     if (edgeCount == 0)
     {
         usage();
     }
 
     struct Edge *edges = (struct Edge *)malloc(edgeCount * sizeof(struct Edge));
-
     for (int i = 0; i < edgeCount; i++)
     {
         edges[i] = convertInputToEdge(argv[i + 1]);
@@ -53,9 +47,19 @@ int main(int argc, char **argv)
     // Initialisieren des Zufallszahlengenerators mit der aktuellen Zeit
     srand(time(NULL));
 
+    struct Shm_t *myshm;
+    int status = openOrCreateSharedMemory(&myshm);
+
+    if (status == -1)
+    {
+        fprintf(stderr, "creation of shm failed");
+        return 1;
+    }
+
     int writePos = 0;
-    struct Edge *cancelledEdges = (struct Edge *)malloc(edgeCount * sizeof(struct Edge));
-    while (1)
+
+    // generate while supervisor does not end
+    while (!myshm->terminateGenerators)
     {
         // assign random color to vertices
         for (int i = 0; i < edgeCount; i++)
@@ -69,24 +73,59 @@ int main(int argc, char **argv)
             //                   colorToString(edges[i].vertex2.color));
         }
 
+        // check for a solution
+        EdgeDTO edgeDTO;
         int cancelledEdgeCounter = 0;
         for (int i = 0; i < edgeCount; i++)
         {
-            struct Edge edge = edges[i];
+            Edge edge = edges[i];
             if (edge.vertex1.color == edge.vertex2.color)
             {
-                cancelledEdges[cancelledEdgeCounter] = edge;
+                edgeDTO.results[cancelledEdgeCounter] = edge;
                 cancelledEdgeCounter++;
             }
         }
-        // fprintf(stdout, "3 colorable with removing %d edges\n", cancelledEdges);
+        edgeDTO.edgeCount = cancelledEdgeCounter;
 
-        sem_wait(semWrite);
-        myshm->results[writePos] = cancelledEdges;
-        writePos = (writePos + 1) % MAX_DATA;
-        sem_post(semRead);
+        // wait for empty space on buffer
+        if ((sem_wait(&myshm->numFree) == -1) && (errno != EINTR))
+        {
+            fprintf(stderr, "Failure in semaphore wait");
+            exit(EXIT_FAILURE);
+        }
 
-        // wohooo graph is 3-colorable
+        if (myshm->terminateGenerators)
+        {
+            // supervisor called sem_post() to free generators for shutdown
+            break;
+        }
+
+        // wait for exclusive write access on buffer
+        if ((sem_wait(&myshm->writeMutex) == -1) && (errno != EINTR))
+        {
+            fprintf(stderr, "Failure in semaphore wait");
+            exit(EXIT_FAILURE);
+        }
+
+        // write solution to buffer and update writeIndex
+        myshm->buffer[myshm->writeIndex] = edgeDTO;
+        myshm->writeIndex = (myshm->writeIndex + 1) % MAX_DATA;
+
+        // free exclusive access
+        if (sem_post(&myshm->writeMutex) == -1)
+        {
+            fprintf(stderr, "Failure in semaphore post");
+            exit(EXIT_FAILURE);
+        }
+
+        // increase used space on buffer
+        if (sem_post(&myshm->numUsed) == -1)
+        {
+            fprintf(stderr, "Failure in semaphore post");
+            exit(EXIT_FAILURE);
+        }
+
+        // break if we found a perfect solution
         if (cancelledEdgeCounter == 0)
         {
             break;
@@ -94,7 +133,6 @@ int main(int argc, char **argv)
     }
 
     free(edges);
-    free(cancelledEdges);
     closeSharedMemory(myshm);
 }
 

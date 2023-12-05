@@ -2,6 +2,9 @@
 #ifndef BETRIEBSSYSTEME_STRUCTS_H
 #define BETRIEBSSYSTEME_STRUCTS_H
 
+#include <stdbool.h>
+#include <semaphore.h>
+
 enum Color
 {
     UNASSIGNED = -1,
@@ -10,17 +13,37 @@ enum Color
     BLUE = 2,
 };
 
-struct Vertex
+typedef struct Vertex
 {
-    int id;
+    unsigned int id;
     enum Color color;
-};
+} Vertex;
 
-struct Edge
+typedef struct Edge
 {
-    struct Vertex vertex1;
-    struct Vertex vertex2;
-};
+    Vertex vertex1;
+    Vertex vertex2;
+} Edge;
 
+typedef struct EdgeDTO
+{
+    Edge results[128];
+    unsigned int edgeCount;
+} EdgeDTO;
+
+#define MAX_DATA (500)
+typedef struct Shm_t
+{
+    bool terminateGenerators;
+    // unsigned int numGenerators;
+
+    EdgeDTO buffer[MAX_DATA];
+    unsigned int readIndex;
+    unsigned int writeIndex;
+
+    sem_t writeMutex; // write mutex for generators
+    sem_t numUsed;    // num of used indices in buffer (= supervisor should read)
+    sem_t numFree;    // num of used indices in buffer (= generator can write)
+} Shm_t;
 
 #endif // BETRIEBSSYSTEME_STRUCTS_H
