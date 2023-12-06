@@ -19,7 +19,7 @@
 #include <semaphore.h>
 #include <string.h>
 #include <signal.h>
-    #include <errno.h>
+#include <errno.h>
 #include <fcntl.h> /* For O_* constants */
 static void usage();
 
@@ -89,10 +89,6 @@ int main(int argc, char **argv)
         }
     }
 
-    printf("Warten auf %d Sekunden...\n", delay);
-    sleep(delay);
-    printf("Wartezeit abgeschlossen!\n");
-
     int fd = shm_open(SHM_NAME, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
     if (fd == -1)
     {
@@ -132,6 +128,10 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    printf("Warten auf %d Sekunden...\n", delay);
+    sleep(delay);
+    printf("Wartezeit abgeschlossen!\n");
+
     int bestResult = INT_MAX;
     for (int i = 0; (i < limit || limit == -1) && !quit; i++)
     {
@@ -163,7 +163,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "The graph is 3-colorable by removing %d edges: ", bestResult);
                 for (size_t i = 0; i < cancelledEdges->edgeCount; i++)
                 {
-                    printf("%d-%d ", cancelledEdges->results[i].vertex1.id, cancelledEdges->results[i].vertex1.id);
+                    printf("%d-%d ", cancelledEdges->results[i].vertex1.id, cancelledEdges->results[i].vertex2.id);
                 }
                 printf("\n");
             }
