@@ -4,6 +4,9 @@
 
 #define SHM_NAME "/12220836shm"
 #define MAX_DATA (500)
+#define SEM_WRITE_MUTEX "/write_mutex"
+#define SEM_NUM_USED "/num_used"
+#define SEM_NUM_FREE "/num_free"
 
 #include <stdbool.h>
 #include <semaphore.h>
@@ -42,10 +45,6 @@ typedef struct Shm_t
     EdgeDTO buffer[MAX_DATA];
     unsigned int readIndex;
     unsigned int writeIndex;
-
-    sem_t writeMutex; // write mutex for generators
-    sem_t numUsed;    // num of used indices in buffer (= supervisor should read)
-    sem_t numFree;    // num of used indices in buffer (= generator can write)
 } Shm_t;
 
 #endif // BETRIEBSSYSTEME_STRUCTS_H

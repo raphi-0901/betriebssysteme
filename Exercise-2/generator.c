@@ -16,7 +16,6 @@
 #include <errno.h>
 #include "structs.h"
 #include <fcntl.h>
-#include <stdio.h>
 #include <stdbool.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -26,10 +25,6 @@ static void usage();
 char *name;
 
 static struct Edge convertInputToEdge(char *input);
-
-#define SEM_READ "/sem_read"
-#define SEM_WRITE "/sem_write"
-#define SEM_MUTEX "/sem_mutex"
 
 int main(int argc, char **argv)
 {
@@ -48,6 +43,7 @@ int main(int argc, char **argv)
     }
 
     Vertex vertices[edgeCount * 2]; // cannot be more than twice the edgeCount
+
     // add all vertices to vertices array
     int vertexCounter = 0;
     for (int i = 0; i < edgeCount; i++)
@@ -91,16 +87,22 @@ int main(int argc, char **argv)
     int fd = shm_open(SHM_NAME, O_RDWR, 0);
     if (fd == -1)
     {
-        fprintf(stderr, "Failure in semaphore wait\n");
+        fprintf(stderr, "Failure while opening shared memory\n");
         exit(EXIT_FAILURE);
     }
+
     Shm_t *myshm =
         mmap(NULL, sizeof(*myshm), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (myshm == MAP_FAILED)
     {
-        fprintf(stderr, "Failure in semaphore wait\n");
+        fprintf(stderr, "Failure while mapping shared memory\n");
         exit(EXIT_FAILURE);
     }
+
+    // open semaphores
+    sem_t *writeMutex = sem_open(SEM_WRITE_MUTEX, 0);
+    sem_t *numUsed = sem_open(SEM_NUM_USED, 0);
+    sem_t *numFree = sem_open(SEM_NUM_FREE, 0);
 
     close(fd);
 
@@ -154,7 +156,7 @@ int main(int argc, char **argv)
         }
 
         // wait for empty space on buffer
-        if ((sem_wait(&myshm->numFree) == -1) && (errno != EINTR))
+        if ((sem_wait(numFree) == -1) && (errno != EINTR))
         {
             fprintf(stderr, "Failure in semaphore wait\n");
             exit(EXIT_FAILURE);
@@ -162,12 +164,12 @@ int main(int argc, char **argv)
 
         if (myshm->terminateGenerators)
         {
-            // supervisor called sem_post() to free generators for shutdown
+            // supervisor wants to free generators for shutdown
             break;
         }
 
         // wait for exclusive write access on buffer
-        if ((sem_wait(&myshm->writeMutex) == -1) && (errno != EINTR))
+        if ((sem_wait(writeMutex) == -1) && (errno != EINTR))
         {
             fprintf(stderr, "Failure in semaphore wait\n");
             exit(EXIT_FAILURE);
@@ -178,18 +180,24 @@ int main(int argc, char **argv)
         myshm->writeIndex = (myshm->writeIndex + 1) % MAX_DATA;
 
         // free exclusive access
-        if (sem_post(&myshm->writeMutex) == -1)
+        if (sem_post(writeMutex) == -1)
         {
             fprintf(stderr, "Failure in semaphore post\n");
             exit(EXIT_FAILURE);
         }
 
         // increase used space on buffer
-        if (sem_post(&myshm->numUsed) == -1)
+        if (sem_post(numUsed) == -1)
         {
             fprintf(stderr, "Failure in semaphore post\n");
             exit(EXIT_FAILURE);
         }
+    }
+
+    if (sem_close(writeMutex) == -1 || sem_close(numUsed) == -1 || sem_close(numFree) == -1)
+    {
+        fprintf(stderr, "Failure in semaphore close");
+        exit(EXIT_FAILURE);
     }
 
     // unmap shared memory:

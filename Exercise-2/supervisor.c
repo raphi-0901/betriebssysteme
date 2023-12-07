@@ -3,14 +3,13 @@
  * @author Raphael Wirnsberger <e12220836@student.tuwien.ac.at>
  * @date 11.12.2023
  *
- * @brief Source file of supervisor programm of 3-coloring.
+ * @brief Source file of supervisor program of 3-coloring.
  *
  **/
 
 #include <fcntl.h>
 #include <stdio.h>
 #include <sys/mman.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <limits.h>
@@ -19,17 +18,9 @@
 #include <string.h>
 #include <signal.h>
 #include <errno.h>
-#include <fcntl.h>
-#include <stdio.h>
 #include <stdbool.h>
-#include <sys/mman.h>
-#include <unistd.h>
-#include <fcntl.h> /* For O_* constants */
-static void usage();
 
-#define SEM_READ "/sem_read"
-#define SEM_WRITE "/sem_write"
-#define SEM_MUTEX "/sem_mutex"
+static void usage();
 
 int delay = 0;
 int limit = -1;
@@ -96,50 +87,49 @@ int main(int argc, char **argv)
     int fd = shm_open(SHM_NAME, O_CREAT | O_EXCL | O_RDWR, 0600);
     if (fd == -1)
     {
-        fprintf(stderr, "initialisation of semaphore failed\n");
+        fprintf(stderr, "initialization of shared memory failed\n");
         return 1;
     }
     if (ftruncate(fd, sizeof(Shm_t)) == -1)
     {
-        fprintf(stderr, "initialisation of semaphore failed\n");
+        fprintf(stderr, "initialization of shared memory failed\n");
         return 1;
     }
     Shm_t *myshm =
         mmap(NULL, sizeof(*myshm), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (myshm == MAP_FAILED)
     {
-        fprintf(stderr, "initialisation of semaphore failed\n");
+        fprintf(stderr, "initialization of shared memory failed\n");
         return 1;
     }
 
-    // set values of shm
+    // set values of shared memory
     myshm->writeIndex = 0;
     myshm->readIndex = 0;
     myshm->terminateGenerators = false;
-    if (sem_init(&myshm->writeMutex, true, 1) == -1)
+
+    sem_t *writeMutex = sem_open(SEM_WRITE_MUTEX, O_CREAT | O_EXCL, 0600, 1);
+    sem_t *numUsed = sem_open(SEM_NUM_USED, O_CREAT | O_EXCL, 0600, 0);
+    sem_t *numFree = sem_open(SEM_NUM_FREE, O_CREAT | O_EXCL, 0600, MAX_DATA);
+
+    if (writeMutex == SEM_FAILED || numUsed == SEM_FAILED || numFree == SEM_FAILED)
     {
-        fprintf(stderr, "initialisation of semaphore failed\n");
-        return 1;
-    }
-    if (sem_init(&myshm->numUsed, true, 0) == -1)
-    {
-        fprintf(stderr, "initialisation of semaphore failed\n");
-        return 1;
-    }
-    if (sem_init(&myshm->numFree, true, MAX_DATA) == -1)
-    {
-        fprintf(stderr, "initialisation of semaphore failed\n");
+        fprintf(stderr, "initialization of semaphores failed\n");
         return 1;
     }
 
-    printf("Warten auf %d Sekunden...\n", delay);
+    // myshm->writeMutex = writeMutex;
+    // myshm->numUsed = numUsed;
+    // myshm->numFree = numFree;
+
+    printf("Waiting for %d seconds...\n", delay);
     sleep(delay);
-    printf("Wartezeit abgeschlossen!\n");
+    printf("Waiting completed!\n");
 
     int bestResult = INT_MAX;
     for (int i = 0; (i < limit || limit == -1) && !quit; i++)
     {
-        if (sem_wait(&myshm->numUsed) == -1)
+        if (sem_wait(numUsed) == -1)
         {
             if (errno == EINTR)
             {
@@ -151,18 +141,15 @@ int main(int argc, char **argv)
         }
 
         struct EdgeDTO *cancelledEdges = &myshm->buffer[myshm->readIndex];
-        // fprintf(stderr, "Got %d edges\n", cancelledEdges->edgeCount);
         if (cancelledEdges->edgeCount < bestResult)
         {
             bestResult = cancelledEdges->edgeCount;
             if (bestResult == 0)
             {
-                // make sure to clean shared memory and semaphores
                 break;
             }
             else
             {
-                // todo print all edges in cancelledEdges result
                 fprintf(stderr, "The graph is 3-colorable by removing %d edges: ", bestResult);
                 for (size_t i = 0; i < cancelledEdges->edgeCount; i++)
                 {
@@ -173,7 +160,7 @@ int main(int argc, char **argv)
         }
 
         myshm->readIndex = (myshm->readIndex + 1) % MAX_DATA;
-        if (sem_post(&myshm->numFree) == -1)
+        if (sem_post(numFree) == -1)
         {
             fprintf(stderr, "Failure in semaphore wait\n");
             exit(EXIT_FAILURE);
@@ -191,33 +178,16 @@ int main(int argc, char **argv)
 
     printf("Terminating generators...\n");
     myshm->terminateGenerators = true;
-    // for (size_t i = 0; i < shmp->numGenerators; i++)
-    // {
-    //     if (sem_post(&shmp->numFree) == -1)
-    //     {
-    //         perror("sem_post - error occured while freeing the waiting generators");
-    //     }
-    // }
-    // size_t len = 0;
-    // char *line = NULL;
-    // while (getline(&line, &len, stdin) != -1)
-    // {
-    //     printf("line: %s", line);
-    // }
 
-    if (sem_destroy(&(myshm->writeMutex)) == -1)
+    if (sem_close(writeMutex) == -1 || sem_close(numUsed) == -1 || sem_close(numFree) == -1)
     {
-        fprintf(stderr, "Failure in semaphore destroy");
+        fprintf(stderr, "Failure in semaphore close");
         exit(EXIT_FAILURE);
     }
-    if (sem_destroy(&(myshm->numUsed)) == -1)
+
+    if (sem_unlink(SEM_WRITE_MUTEX) == -1 || sem_unlink(SEM_NUM_USED) == -1 || sem_unlink(SEM_NUM_FREE) == -1)
     {
-        fprintf(stderr, "Failure in semaphore destroy");
-        exit(EXIT_FAILURE);
-    }
-    if (sem_destroy(&(myshm->numFree)) == -1)
-    {
-        fprintf(stderr, "Failure in semaphore destroy");
+        fprintf(stderr, "Failure in semaphore unlink");
         exit(EXIT_FAILURE);
     }
 
