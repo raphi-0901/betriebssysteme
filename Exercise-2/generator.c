@@ -48,13 +48,15 @@ int main(int argc, char **argv)
     srand(time(NULL));
 
     int fd = shm_open(SHM_NAME, O_RDWR, 0);
-    if (fd == -1) {
+    if (fd == -1)
+    {
         fprintf(stderr, "Failure in semaphore wait\n");
         exit(EXIT_FAILURE);
     }
-    Shm_t* myshm =
-            mmap(NULL, sizeof(*myshm), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (myshm == MAP_FAILED) {
+    Shm_t *myshm =
+        mmap(NULL, sizeof(*myshm), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (myshm == MAP_FAILED)
+    {
         fprintf(stderr, "Failure in semaphore wait\n");
         exit(EXIT_FAILURE);
     }
@@ -91,6 +93,12 @@ int main(int argc, char **argv)
             }
         }
         edgeDTO.edgeCount = cancelledEdgeCounter;
+
+        // probieren schlechte ergebnisse gar nicht zu schreiben
+        if (cancelledEdgeCounter > 8)
+        {
+            continue;
+        }
 
         // wait for empty space on buffer
         if ((sem_wait(&myshm->numFree) == -1) && (errno != EINTR))
@@ -138,7 +146,7 @@ int main(int argc, char **argv)
     }
 
     free(edges);
-    closeSharedMemory(myshm);
+    closeSharedMemory(myshm, true);
 }
 
 static char *colorToString(enum Color color)

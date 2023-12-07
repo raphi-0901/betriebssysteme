@@ -9,6 +9,7 @@
 
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <sys/mman.h>
 #include <unistd.h>
 #include "structs.h"
@@ -54,7 +55,7 @@ static int openOrCreateSharedMemory(Shm_t **myshm)
     return 0;
 }
 
-static void closeSharedMemory(Shm_t *myshm)
+static void closeSharedMemory(Shm_t *myshm, bool unlinkShm)
 {
     // unmap shared memory:
     if (munmap(myshm, sizeof(*myshm)) == -1)
@@ -63,7 +64,7 @@ static void closeSharedMemory(Shm_t *myshm)
     }
 
     // remove shared memory object:
-    if (shm_unlink(SHM_NAME) == -1)
+    if (unlinkShm && shm_unlink(SHM_NAME) == -1)
     {
         fprintf(stderr, "error in shared memory unlink\n");
     }
