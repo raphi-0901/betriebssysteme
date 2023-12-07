@@ -14,12 +14,16 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <limits.h>
-#include "shared_memory.h"
 #include "structs.h"
 #include <semaphore.h>
 #include <string.h>
 #include <signal.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdbool.h>
+#include <sys/mman.h>
+#include <unistd.h>
 #include <fcntl.h> /* For O_* constants */
 static void usage();
 
@@ -89,7 +93,7 @@ int main(int argc, char **argv)
         }
     }
 
-    int fd = shm_open(SHM_NAME, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
+    int fd = shm_open(SHM_NAME, O_CREAT | O_EXCL | O_RDWR, 0600);
     if (fd == -1)
     {
         fprintf(stderr, "initialisation of semaphore failed\n");
@@ -153,9 +157,8 @@ int main(int argc, char **argv)
             bestResult = cancelledEdges->edgeCount;
             if (bestResult == 0)
             {
-                fprintf(stdout, "The graph is 3-colorable!\n");
                 // make sure to clean shared memory and semaphores
-                exit(EXIT_SUCCESS);
+                break;
             }
             else
             {
@@ -177,7 +180,14 @@ int main(int argc, char **argv)
         }
     }
 
-    fprintf(stdout, "The graph might not be 3-colorable, best solution removes %d edges\n", bestResult);
+    if (bestResult == 0)
+    {
+        fprintf(stdout, "The graph is 3-colorable!\n");
+    }
+    else
+    {
+        fprintf(stdout, "The graph might not be 3-colorable, best solution removes %d edges\n", bestResult);
+    }
 
     printf("Terminating generators...\n");
     myshm->terminateGenerators = true;
@@ -211,7 +221,17 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
-    closeSharedMemory(myshm, false);
+    // unmap shared memory:
+    if (munmap(myshm, sizeof(*myshm)) == -1)
+    {
+        fprintf(stderr, "error in munmap\n");
+    }
+
+    // remove shared memory object:
+    if (shm_unlink(SHM_NAME) == -1)
+    {
+        fprintf(stderr, "error in shared memory unlink\n");
+    }
 }
 
 /**

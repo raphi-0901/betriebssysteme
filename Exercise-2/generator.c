@@ -9,18 +9,21 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include "shared_memory.h"
 #include <regex.h>
 #include <string.h>
 #include <time.h>
 #include <semaphore.h>
 #include <errno.h>
+#include "structs.h"
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdbool.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 static void usage();
 
 char *name;
-
-static char *colorToString(enum Color color);
 
 static struct Edge convertInputToEdge(char *input);
 
@@ -38,14 +41,52 @@ int main(int argc, char **argv)
         usage();
     }
 
-    struct Edge *edges = (struct Edge *)malloc(edgeCount * sizeof(struct Edge));
+    struct Edge edges[edgeCount];
     for (int i = 0; i < edgeCount; i++)
     {
         edges[i] = convertInputToEdge(argv[i + 1]);
     }
 
-    // Initialisieren des Zufallszahlengenerators mit der aktuellen Zeit
-    srand(time(NULL));
+    Vertex vertices[edgeCount * 2]; // cannot be more than twice the edgeCount
+    // add all vertices to vertices array
+    int vertexCounter = 0;
+    for (int i = 0; i < edgeCount; i++)
+    {
+        Vertex vertex1 = edges[i].vertex1;
+        Vertex vertex2 = edges[i].vertex2;
+
+        bool foundVertex1 = false;
+        bool foundVertex2 = false;
+        for (int j = 0; j < vertexCounter; j++)
+        {
+            if (foundVertex1 && foundVertex2)
+            {
+                break;
+            }
+
+            Vertex compareVertex = vertices[j];
+
+            if (compareVertex.id == vertex1.id)
+            {
+                foundVertex1 = true;
+            }
+
+            if (compareVertex.id == vertex2.id)
+            {
+                foundVertex2 = true;
+            }
+        }
+
+        if (!foundVertex1)
+        {
+            vertices[vertexCounter++] = vertex1;
+        }
+
+        if (!foundVertex2)
+        {
+            vertices[vertexCounter++] = vertex2;
+        }
+    }
 
     int fd = shm_open(SHM_NAME, O_RDWR, 0);
     if (fd == -1)
@@ -63,21 +104,33 @@ int main(int argc, char **argv)
 
     close(fd);
 
-    int writePos = 0;
+    // Initialisieren des Zufallszahlengenerators mit der aktuellen Zeit
+    srand(time(NULL));
 
     // generate while supervisor does not end
     while (!myshm->terminateGenerators)
     {
-        // assign random color to vertices
-        for (int i = 0; i < edgeCount; i++)
+        // assign random colors
+        // color nodeArray
+        for (size_t i = 0; i < vertexCounter; i++)
         {
-            int randomColor1 = rand() % 3;
-            int randomColor2 = rand() % 3;
-            edges[i].vertex1.color = randomColor1;
-            edges[i].vertex2.color = randomColor2;
+            vertices[i].color = rand() % 3;
+        }
 
-            //            printf("%d - %d\t%s - %s\n", edges[i].vertex1.id, edges[i].vertex2.id, colorToString(edges[i].vertex1.color),
-            //                   colorToString(edges[i].vertex2.color));
+        for (size_t i = 0; i < edgeCount; i++)
+        {
+            for (size_t j = 0; j < vertexCounter; j++)
+            {
+                if (vertices[j].id == edges[i].vertex1.id)
+                {
+                    edges[i].vertex1.color = vertices[j].color;
+                }
+
+                if (vertices[j].id == edges[i].vertex2.id)
+                {
+                    edges[i].vertex2.color = vertices[j].color;
+                }
+            }
         }
 
         // check for a solution
@@ -137,37 +190,13 @@ int main(int argc, char **argv)
             fprintf(stderr, "Failure in semaphore post\n");
             exit(EXIT_FAILURE);
         }
-
-        // break if we found a perfect solution
-        if (cancelledEdgeCounter == 0)
-        {
-            break;
-        }
     }
 
-    free(edges);
-    closeSharedMemory(myshm, true);
-}
-
-static char *colorToString(enum Color color)
-{
-    char *colorName = "";
-    switch (color)
+    // unmap shared memory:
+    if (munmap(myshm, sizeof(*myshm)) == -1)
     {
-    case RED:
-        colorName = "RED";
-        break;
-    case GREEN:
-        colorName = "GREEN";
-        break;
-    case BLUE:
-        colorName = "BLUE";
-        break;
-    default:
-        colorName = "UNASSIGNED";
-        break;
+        fprintf(stderr, "error in munmap\n");
     }
-    return colorName;
 }
 
 static struct Edge convertInputToEdge(char *input)

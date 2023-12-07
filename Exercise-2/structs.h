@@ -2,6 +2,9 @@
 #ifndef BETRIEBSSYSTEME_STRUCTS_H
 #define BETRIEBSSYSTEME_STRUCTS_H
 
+#define SHM_NAME "/12220836shm"
+#define MAX_DATA (500)
+
 #include <stdbool.h>
 #include <semaphore.h>
 
@@ -31,7 +34,6 @@ typedef struct EdgeDTO
     unsigned int edgeCount;
 } EdgeDTO;
 
-#define MAX_DATA (500)
 typedef struct Shm_t
 {
     bool terminateGenerators;
