@@ -13,10 +13,10 @@ SLAVE = generator
 all: $(MASTER) $(SLAVE)
 
 $(MASTER): $(MASTER).c
-	$(CC) $(CFLAGS) -o $(MASTER) $(MASTER).c -lm
+	$(CC) $(CFLAGS) $(MASTER).c -o $(MASTER) -lrt -lpthread
 
 $(SLAVE): $(SLAVE).c
-	$(CC) $(CFLAGS) -o $(SLAVE) $(SLAVE).c -lm
+	$(CC) $(CFLAGS) $(SLAVE).c -o $(SLAVE) -lrt -lpthread
 
 clean:
 	rm -f $(MASTER) $(SLAVE)

@@ -1,4 +1,13 @@
 
+/**
+ * @file structs.h
+ * @author Raphael Wirnsberger <e12220836@student.tuwien.ac.at>
+ * @date 11.12.2023
+ *
+ * @brief Defines some aliases and structs used within all files.
+ *
+ **/
+
 #ifndef BETRIEBSSYSTEME_STRUCTS_H
 #define BETRIEBSSYSTEME_STRUCTS_H
 
@@ -40,7 +49,7 @@ typedef struct EdgeDTO
 typedef struct Shm_t
 {
     bool terminateGenerators;
-    // unsigned int numGenerators;
+    unsigned int countGenerator;
 
     EdgeDTO buffer[MAX_DATA];
     unsigned int readIndex;

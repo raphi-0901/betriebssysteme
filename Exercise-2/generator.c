@@ -18,14 +18,24 @@
 #include <fcntl.h>
 #include <stdbool.h>
 #include <sys/mman.h>
+#include <sys/stat.h> /* For mode constants */
+#include <fcntl.h>
 #include <unistd.h>
 
 static void usage();
 
+bool alreadyIncreasedGeneratorCounter = false;
 char *name;
 
 static struct Edge convertInputToEdge(char *input);
 
+/**
+ * Program entry point.
+ * @brief Generates possible solutions for the input graph and writes it to the shared memory.
+ * @param argc The argument counter.
+ * @param argv The optional arguments.
+ * @return EXIT_SUCCESS or EXIT_FAILURE.
+ */
 int main(int argc, char **argv)
 {
     name = argv[0];
@@ -104,7 +114,11 @@ int main(int argc, char **argv)
     sem_t *numUsed = sem_open(SEM_NUM_USED, 0);
     sem_t *numFree = sem_open(SEM_NUM_FREE, 0);
 
-    close(fd);
+    if (close(fd) == -1)
+    {
+        fprintf(stderr, "Failure while closing fd\n");
+        exit(EXIT_FAILURE);
+    }
 
     // Initialisieren des Zufallszahlengenerators mit der aktuellen Zeit
     srand(time(NULL));
@@ -179,6 +193,12 @@ int main(int argc, char **argv)
         myshm->buffer[myshm->writeIndex] = edgeDTO;
         myshm->writeIndex = (myshm->writeIndex + 1) % MAX_DATA;
 
+        if (!alreadyIncreasedGeneratorCounter)
+        {
+            myshm->countGenerator++;
+            alreadyIncreasedGeneratorCounter = true;
+        }
+
         // free exclusive access
         if (sem_post(writeMutex) == -1)
         {
@@ -204,9 +224,18 @@ int main(int argc, char **argv)
     if (munmap(myshm, sizeof(*myshm)) == -1)
     {
         fprintf(stderr, "error in munmap\n");
+        exit(EXIT_FAILURE);
     }
+    exit(EXIT_SUCCESS);
 }
 
+/**
+ * Converts input to Edge.
+ * @brief Reads the input and tries to convert it to an edge.
+ * @details Exits the program if the input does not match a real or imaginary number.
+ * @param input Input to parse
+ * @return Edge
+ */
 static struct Edge convertInputToEdge(char *input)
 {
     regex_t regex;
@@ -218,18 +247,18 @@ static struct Edge convertInputToEdge(char *input)
     reti = regcomp(&regex, pattern, REG_EXTENDED);
     if (reti)
     {
-        fprintf(stderr, "Fehler beim Kompilieren des regulären Ausdrucks\n");
+        fprintf(stderr, "Error while compiling regex\n");
         regfree(&regex);
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     reti = regexec(&regex, input, 0, NULL, 0);
     if (reti == REG_NOMATCH)
     {
         {
-            fprintf(stderr, "Input does not match us.\n");
+            fprintf(stderr, "Input does not match edge pattern.\n");
             regfree(&regex);
-            usage("");
+            exit(EXIT_FAILURE);
         }
     }
 

@@ -19,6 +19,9 @@
 #include <signal.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <sys/mman.h>
+#include <sys/stat.h> /* For mode constants */
+#include <fcntl.h>
 
 static void usage();
 
@@ -28,6 +31,11 @@ char *programName;
 
 static volatile sig_atomic_t quit = false;
 static void onSignal(int sig, siginfo_t *si, void *unused) { quit = true; }
+
+/**
+ * Signal Handler.
+ * @brief Intercepts the signals
+ */
 static void initSignalHandler(void)
 {
     struct sigaction sa;
@@ -48,6 +56,13 @@ static void initSignalHandler(void)
     }
 }
 
+/**
+ * Program entry point.
+ * @brief Waits for generators to write solutions into the shared memory.
+ * @param argc The argument counter.
+ * @param argv The optional arguments.
+ * @return EXIT_SUCCESS or EXIT_FAILURE.
+ */
 int main(int argc, char **argv)
 {
     initSignalHandler();
@@ -88,19 +103,25 @@ int main(int argc, char **argv)
     if (fd == -1)
     {
         fprintf(stderr, "initialization of shared memory failed\n");
-        return 1;
+        exit(EXIT_FAILURE);
     }
     if (ftruncate(fd, sizeof(Shm_t)) == -1)
     {
         fprintf(stderr, "initialization of shared memory failed\n");
-        return 1;
+        exit(EXIT_FAILURE);
     }
     Shm_t *myshm =
         mmap(NULL, sizeof(*myshm), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (myshm == MAP_FAILED)
     {
         fprintf(stderr, "initialization of shared memory failed\n");
-        return 1;
+        exit(EXIT_FAILURE);
+    }
+
+    if (close(fd) == -1)
+    {
+        fprintf(stderr, "Failure while closing fd\n");
+        exit(EXIT_FAILURE);
     }
 
     // set values of shared memory
@@ -115,16 +136,10 @@ int main(int argc, char **argv)
     if (writeMutex == SEM_FAILED || numUsed == SEM_FAILED || numFree == SEM_FAILED)
     {
         fprintf(stderr, "initialization of semaphores failed\n");
-        return 1;
+        exit(EXIT_FAILURE);
     }
 
-    // myshm->writeMutex = writeMutex;
-    // myshm->numUsed = numUsed;
-    // myshm->numFree = numFree;
-
-    printf("Waiting for %d seconds...\n", delay);
     sleep(delay);
-    printf("Waiting completed!\n");
 
     int bestResult = INT_MAX;
     for (int i = 0; (i < limit || limit == -1) && !quit; i++)
@@ -148,15 +163,15 @@ int main(int argc, char **argv)
             {
                 break;
             }
-            else
-            {
-                fprintf(stderr, "The graph is 3-colorable by removing %d edges: ", bestResult);
-                for (size_t i = 0; i < cancelledEdges->edgeCount; i++)
-                {
-                    printf("%d-%d ", cancelledEdges->results[i].vertex1.id, cancelledEdges->results[i].vertex2.id);
-                }
-                printf("\n");
-            }
+            // else
+            // {
+            //     fprintf(stderr, "The graph is 3-colorable by removing %d edges: ", bestResult);
+            //     for (size_t i = 0; i < cancelledEdges->edgeCount; i++)
+            //     {
+            //         printf("%d-%d ", cancelledEdges->results[i].vertex1.id, cancelledEdges->results[i].vertex2.id);
+            //     }
+            //     printf("\n");
+            // }
         }
 
         myshm->readIndex = (myshm->readIndex + 1) % MAX_DATA;
@@ -173,11 +188,18 @@ int main(int argc, char **argv)
     }
     else
     {
-        fprintf(stdout, "The graph might not be 3-colorable, best solution removes %d edges\n", bestResult);
+        fprintf(stdout, "The graph might not be 3-colorable, best solution removes %d edges.\n", bestResult);
     }
 
-    printf("Terminating generators...\n");
     myshm->terminateGenerators = true;
+    for (size_t i = 0; i < myshm->countGenerator; i++)
+    {
+        if (sem_post(numFree) == -1)
+        {
+            fprintf(stderr, "error in semaphore post while terminating generators.\n");
+            exit(EXIT_FAILURE);
+        }
+    }
 
     if (sem_close(writeMutex) == -1 || sem_close(numUsed) == -1 || sem_close(numFree) == -1)
     {
@@ -195,13 +217,16 @@ int main(int argc, char **argv)
     if (munmap(myshm, sizeof(*myshm)) == -1)
     {
         fprintf(stderr, "error in munmap\n");
+        exit(EXIT_FAILURE);
     }
 
     // remove shared memory object:
     if (shm_unlink(SHM_NAME) == -1)
     {
         fprintf(stderr, "error in shared memory unlink\n");
+        exit(EXIT_FAILURE);
     }
+    exit(EXIT_SUCCESS);
 }
 
 /**
