@@ -2,7 +2,7 @@
 # Makefile for forkFFT
 # Author: Raphael Wirnsberger <e12220836@student.tuwien.ac.at>
 # Date: 10.11.2023
-# Description: This Makefile builds forkFFT
+# Description: This Makefile builds http
 ############################################
 
 CC = gcc

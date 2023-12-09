@@ -1,3 +1,12 @@
+/**
+ * @file client.c
+ * @author Raphael Wirnsberger <e12220836@student.tuwien.ac.at>
+ * @date 15.01.2023
+ *
+ * @brief Source file of client program of http.
+ *
+ **/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -5,35 +14,50 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <stdbool.h>
+#include <errno.h>
+#include <sys/stat.h>
 
 #define BUFFER_SIZE 1024
 
 static void usage();
 
-// Function to extract hostname and filepath from the URL
-void parseUrl(const char *url, char *hostname, char *filepath) {
+/**
+ * Extract hostName and filePath from the url
+ * @param url Url to parse.
+ * @param hostName hostName to store at
+ * @param filePath filePath to store at
+ */
+void parseUrl(const char *url, char *hostName, char *filePath) {
     char protocol[8];
-    sscanf(url, "%7[^:]://%[^/]/%s", protocol, hostname, filepath);
+    sscanf(url, "%7[^:]://%[^;/?:@=&]%s", protocol, hostName, filePath);
     if (strcmp(protocol, "http") != 0) {
         fprintf(stderr, "Error: Only HTTP protocol is supported.\n");
         exit(EXIT_FAILURE);
     }
 
-    if (filepath[strlen(filepath) - 1] == '\001' || filepath[strlen(filepath) - 1] == '\0') {
-        strcpy(filepath, "index.html");
+    if (filePath[0] == '/') {
+        memmove(filePath, filePath + 1, strlen(filePath)); // Verschiebe den String um 1 nach links
     }
-        // Überprüfen, ob der String mit '/' endet
-    else if (filepath[strlen(filepath) - 1] == '/') {
-        // Anhängen von "index.html"
-        strcat(filepath, "index.html");
-    }
+
+//    if (filePath[strlen(filePath) - 1] == '\001' || filePath[strlen(filePath) - 1] == '\0') {
+//        strcpy(filePath, "index.html");
+//    }
+//    else if (filePath[strlen(filePath) - 1] == '/') {
+//        strcat(filePath, "index.html");
+//    }
 }
 
 char *programName;
 
+/**
+ * Program entry point.
+ * @details Fetches the content from the given url.
+ * @param argc The argument counter.
+ * @param argv The optional arguments.
+ * @return EXIT_SUCCESS or EXIT_FAILURE.
+ */
 int main(int argc, char *argv[]) {
     programName = argv[0];
-
 
     // Parse command line arguments
     if (argc < 2) {
@@ -44,13 +68,19 @@ int main(int argc, char *argv[]) {
     int opt;
     int port = 80;
     char *outputFile = NULL;
+    char *outputDirectory = NULL;
 
+    bool portAlreadySet = false;
     bool fileSet = false;
     bool dirSet = false;
 
     while ((opt = getopt(argc, argv, "p:o:d:")) != -1) {
         switch (opt) {
             case 'p':
+                if (portAlreadySet) {
+                    usage();
+                }
+                portAlreadySet = true;
                 char *endptr;
                 long tempPort = strtol(optarg, &endptr, 10);
 
@@ -77,19 +107,35 @@ int main(int argc, char *argv[]) {
                     usage();
                 }
                 dirSet = true;
-                outputFile = optarg;
+                outputDirectory = optarg;
+
+                // check if folder has no points in name
+                const char *ptr = outputDirectory;
+                while (*ptr) {
+                    if (*ptr == '.') {
+                        fprintf(stderr, "Invalid folder name\n");
+                        usage();
+                        exit(EXIT_FAILURE);
+                    }
+                    ptr++;
+                }
+
                 break;
             default:
                 usage();
         }
     }
 
+    if ((argc - optind) != 1) {
+        usage();
+    }
+
     int sockfd;
     struct sockaddr_in serverAddr;
-    struct hostent *server;
     char buffer[BUFFER_SIZE];
     char hostname[256];
     char filepath[256];
+    memset(filepath, 0, sizeof(filepath));
 
     // Get URL
     const char *url = argv[optind];
@@ -100,7 +146,7 @@ int main(int argc, char *argv[]) {
     // Create socket
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
-        perror("Error opening socket");
+        fprintf(stderr, "Error opening socket\n");
         return EXIT_FAILURE;
     }
 
@@ -141,6 +187,7 @@ int main(int argc, char *argv[]) {
     char request[BUFFER_SIZE];
     sprintf(request, "GET /%s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", filepath, hostname);
 
+//    printf("%s", request);
     // Send HTTP request
     if (send(sockfd, request, strlen(request), 0) < 0) {
         perror("Error sending request");
@@ -152,11 +199,40 @@ int main(int argc, char *argv[]) {
     int statusCode = -1;
 
     FILE *outputStream = stdout;
-    if (outputFile != NULL) {
-        outputStream = fopen(outputFile, "w");
-        if (outputStream == NULL) {
-            fprintf(stderr, "Cannot open file: %s.\n", outputFile);
-            exit(EXIT_FAILURE);
+    if (fileSet || dirSet) {
+        if (dirSet) {
+            char outputPath[strlen(outputDirectory) + 256 + 1];
+            if (outputDirectory != NULL) {
+                strcpy(outputPath, outputDirectory);
+                if(filepath[0] == '\0' || filepath[0] == '?') {
+                    strcat(outputPath, "/index.html");
+                }
+                else {
+                    if(filepath[0] != '/') {
+                        strcat(outputPath, "/");
+                    }
+                    strcat(outputPath, filepath);
+                }
+
+                if (mkdir(outputDirectory, 0777) != 0) {
+                    if (errno != EEXIST) {
+                        fprintf(stderr, "Cannot create mkdir: %s.\n", outputDirectory);
+                        exit(EXIT_FAILURE);
+                    }
+                }
+            }
+
+            outputStream = fopen(outputPath, "w+");
+            if (outputStream == NULL) {
+                fprintf(stderr, "Cannot open file: %s.\n", outputPath);
+                exit(EXIT_FAILURE);
+            }
+        } else {
+            outputStream = fopen(outputFile, "w+");
+            if (outputStream == NULL) {
+                fprintf(stderr, "Cannot open file: %s.\n", outputFile);
+                exit(EXIT_FAILURE);
+            }
         }
     }
 
@@ -174,20 +250,20 @@ int main(int argc, char *argv[]) {
 
         // Check response status code
         if (statusCode == -1) {
-            char *status_line = strtok(buffer, "\r\n");
-            if (strncmp(status_line, "HTTP/1.1", 8) == 0) {
+            char *statusLine = strtok(buffer, "\r\n");
+            if (strncmp(statusLine, "HTTP/1.1", 8) == 0) {
                 int parsedStatusCode = -1;
-                sscanf(status_line, "%*s %d", &parsedStatusCode);
+                sscanf(statusLine, "%*s %d", &parsedStatusCode);
                 statusCode = parsedStatusCode;
             } else {
                 fprintf(stderr, "Protocol error!\n");
-                return EXIT_FAILURE;
+                exit(2);
             }
 
             // Check if status is not 200 OK
             if (statusCode != 200) {
-                fprintf(stderr, "Error: %d %s\n", statusCode, status_line + 9); // Printing status text
-                return EXIT_FAILURE;
+                fprintf(stderr, "%s\n", statusLine + 9); // Printing status text
+                exit(3);
             }
         }
     }
@@ -199,7 +275,7 @@ int main(int argc, char *argv[]) {
         fclose(outputStream);
     }
 
-    return EXIT_SUCCESS;
+    exit(EXIT_SUCCESS);
 }
 
 /**
