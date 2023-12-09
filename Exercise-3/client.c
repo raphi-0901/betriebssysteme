@@ -18,12 +18,22 @@ void parseUrl(const char *url, char *hostname, char *filepath) {
         fprintf(stderr, "Error: Only HTTP protocol is supported.\n");
         exit(EXIT_FAILURE);
     }
+
+    if (filepath[strlen(filepath) - 1] == '\001' || filepath[strlen(filepath) - 1] == '\0') {
+        strcpy(filepath, "index.html");
+    }
+        // Überprüfen, ob der String mit '/' endet
+    else if (filepath[strlen(filepath) - 1] == '/') {
+        // Anhängen von "index.html"
+        strcat(filepath, "index.html");
+    }
 }
 
 char *programName;
 
 int main(int argc, char *argv[]) {
     programName = argv[0];
+
 
     // Parse command line arguments
     if (argc < 2) {
