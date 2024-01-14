@@ -1,0 +1,14 @@
+############################################
+# Makefile for forkFFT
+# Author: Raphael Wirnsberger <e12220836@student.tuwien.ac.at>
+# Date: 10.11.2023
+
+
+all: $(SERVER)
+
+$(SERVER): $(SERVER).c
+$(CC) $(CFLAGS) $(SERVER).c -o $(SERVER)
+
+clean:
+rm -f $(SERVER)
+
